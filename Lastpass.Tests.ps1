@@ -132,7 +132,7 @@ InModuleScope Lastpass {
 			Mock 'Read-Host' {'124578'}
 
 
-			Connect-Lastpass -Credential $Credential -OTPCode 123456 | Out-Null
+			Connect-Lastpass -Credential $Credential -OneTimePassword 123456 | Out-Null
 
 			It 'Makes the initial call without the OTP call' {
 				Assert-MockCalled @OTPEnabledMockParam
@@ -200,7 +200,7 @@ InModuleScope Lastpass {
 
 	}
 
-	Describe Sync-LastpassBlob {
+	Describe Sync-Lastpass {
 
 		$DownloadMockParam = @{
 			CommandName = 'Invoke-RestMethod'
@@ -208,7 +208,7 @@ InModuleScope Lastpass {
 		}
 		Mock @DownloadMockParam {}
 
-		$Result = Sync-LastpassBlob
+		$Result = Sync-Lastpass
 
 		It 'Calls the download API' {
 			Assert-MockCalled @DownloadMockParam
