@@ -15,9 +15,19 @@
 # with this program; if not, write to the Free Software Foundation, Inc.,
 # 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 
+$Script:Origin = [DateTime] '1970-01-01 00:00:00'
+$Script:TypeDisplayProperties = @{
+	Account = @(
+
+	)
+}
+
+
 $Script:Session
 $Script:Blob
 $Script:WebSession
+$Script:PasswordTimeout = New-Timespan
+$Script:PasswordPrompt
 
 Function Connect-Lastpass {
 
@@ -56,52 +66,17 @@ Function Connect-Lastpass {
 
 		[String] $OneTimePassword
 	)
-
-	$EncodedUsername = [Byte[]][Char[]] $Credential.UserName.ToLower()
-	$EncodedPassword = [Byte[]][Char[]] $Credential.GetNetworkCredential().Password
-
+	
 	$Param = @{
 		URI = 'https://lastpass.com/iterations.php'
 		Body = @{email = $Credential.Username.ToLower()}
 	}
+	"Iterations parameters:`n{0}" -f ($Param.Body | Out-String) | Write-Debug
 	[Int] $Iterations = Invoke-RestMethod @Param
 	Write-Debug "Iterations: $Iterations"
-
-	Switch($Iterations){
-		1 {
-			$SHA256 = [System.Security.Cryptography.SHA256Managed]::New()
-			$Key = $SHA256.ComputeHash($EncodedUsername + $EncodedPassword)
-			$Hash = $SHA256.ComputeHash(
-				[Byte[]][Char[]] (
-					(($Key | ForEach { "{0:x2}" -f $_ }) -join '') + 
-					$Credential.GetNetworkCredential().Password
-				)
-			)
-			Break
-		}
-		{$_ -gt 1} {
-			$SHA256 = [System.Security.Cryptography.HashAlgorithmName]::SHA256
-			$HashSize = 32
-
-			$Key = [System.Security.Cryptography.Rfc2898DeriveBytes]::New(
-				$EncodedPassword, 
-				$EncodedUsername, 
-				$Iterations, 
-				$SHA256
-			).GetBytes($HashSize)
-
-			$Hash = [System.Security.Cryptography.Rfc2898DeriveBytes]::New(
-				$Key,
-				$EncodedPassword,
-				1,
-				$SHA256
-			).GetBytes($HashSize)
-			Break
-		}
-		Default { Throw "Invalid Iteration value: '$Iterations'" }
-	}
-	$Hash = ($Hash | ForEach { "{0:x2}" -f $_ }) -join ''
-	Write-Debug "Hash: $Hash"
+		
+	$Key = New-Key -Credential $Credential -Iterations $Iterations
+	$Hash = New-LoginHash -Key $Key -Credential $Credential -Iterations $Iterations
 
 	$Param = @{
 		URI = 'https://lastpass.com/login.php'
@@ -118,12 +93,13 @@ Function Connect-Lastpass {
 		}
 		SessionVariable = 'WebSession'
 	}
-	$Param | Out-String | Write-Debug
+	"Login parameters:`n{0}" -f ($Param.Body | Out-String) | Write-Debug
 	$Response = (Invoke-RestMethod @Param).Response
 
 	#TODO: Change this to While($Response.Error)?
 	If($Response.Error){
-		Switch -Regex ($Response.Error.Cause){
+		'Error received:`n{0}' -f $Response.Error | Write-Debug
+				Switch -Regex ($Response.Error.Cause){
 			'googleauthrequired|otprequired' {
 				If(!$OneTimePassword){
 					$OneTimePassword = Read-Host 'Enter multifactor authentication code'
@@ -151,18 +127,20 @@ Function Connect-Lastpass {
 			SessionID			= $Response.OK.SessionID
 			Token				= $Response.OK.Token
 			EncryptedPrivateKey = $Response.OK.PrivateKeyEnc
-			Iterations			= $Iterations
+			Iterations			= $Response.OK.Iterations
+			Username			= $Response.OK.LPUsername
 			Key					= $Key
 		}
 	}
 
-	# Download blob
-	# Sync-Lastpass
+	Sync-Lastpass | Out-Null
 
-	Return [PSCustomObject] @{
+	If($PSBoundParameters.Debug){ Return $Response }
+
+	[PSCustomObject] @{
 		Email = $Credential.Username
 		SessionID = $Script:Session.SessionID
-	}
+	} | Write-Output
 
 }
 
@@ -184,6 +162,7 @@ Function Sync-Lastpass {
 	[CmdletBinding()]
 	Param()
 
+	Write-Verbose 'Syncing Lastpass information'
 	$Cookie = [System.Net.Cookie]::New(
 		'PHPSESSID',
 		[System.Web.HttpUtility]::UrlEncode($Session.SessionID),
@@ -199,17 +178,21 @@ Function Sync-Lastpass {
 		URI = 'https://lastpass.com/getaccts.php'
 		Body = @{ RequestSrc = 'cli' }
 	}
+	"Sync parameters:`n{0}" -f ($Param.Body | Out-String) | Write-Debug
 	$Response = (Invoke-RestMethod @Param).Response
 
-	#Parse blob
-	# Error
+	If($Response.Error){ Throw $Response.Error.Cause }
 
 	$Script:Blob = $Response
 	$Script:LastSyncTime = Get-Date
 
+	Write-Verbose 'Decrypting account names'
+	$Script:Blob.Accounts.Account | ForEach {
+		$_.SetAttribute('name', (ConvertFrom-LPEncryptedString $_.Name))
+	}
+
 	#Output?
-	#FIXME: This should only be output if debugging
-	Write-Output $Response
+	If($PSBoundParameters.Debug){ Write-Output $Response }
 }
 
 
@@ -226,36 +209,67 @@ Function Get-Session {
 
 Function Get-Account {
 
+	[CmdletBinding()]
 	Param(
-
+		[Parameter(
+			ValueFromPipeline,
+			ValueFromPipelineByPropertyName
+		)]
+		[String] $Name
 	)
+	PROCESS {
+		If($Name){
+			$Script:Blob.Accounts.Account |
+				Where {$_.SN -eq 0 -and $_.Name -eq $Name} |
+				ForEach {
+					If(!!([Int] $_.PWProtect) -and $PasswordPrompt -lt (
+								[Datetime]::Now.Subtract($PasswordTimeout))){
+						# TODO: Should this loop? Possibly for a set number of retries?
+						$Password = Read-Host -AsSecureString 'Please confirm your password'
+						$Credential = [pscredential]::New($Script:Session.Username, $Password)
+						$Key = New-Key -Credential $Credential -Iterations $Script:Session.Iterations
 
-	# $Origin = [DateTime] '1970-01-01 00:00:00'
+						$Param = @{
+							ReferenceObject	 = $Script:Session.Key
+							DifferenceObject = $Key
+							SyncWindow		 = 0
+						}
+						If(Compare-Object @Param){ Throw 'Password confirmation failed' }
+						$Script:PasswordPrompt = [datetime]::Now
+					}
 
-	# If($_.PWProtect){
-		# Prompt for password and die if incorrect
-	#}
-	# [PSCustomObject] @{
-	# 	ID = $_.ID
-	# 	Name = ConvertFrom-LPEncrypted $_.Name
-		# 	URL = ($URL -split '([a-f0-9]{2})' | ForEach {
-		# 			If($_){ [Char][Convert]::ToByte($_,16) }
-		# 		}) -join ''
-	# 	Group = ConvertFrom-LPEncrypted $_.Group
-	# 	Username = ConvertFrom-LPEncrypted $_.Username
-	#	Password = ConvertFrom-LPEncrypted $_.Login.p 
-	# 	Extra = ConvertFrom-LPEncrypted $_.Extra #Note content
-	#	
-	#	Favorite = !!($_.Fav)
-	#	LastModified = $Origin.AddSeconds($_.Last_Modified)
-	#	LastAccessed = $Origin.AddSeconds($_.Last_Touch)
-	#	LaunchCount = $_.Launch_Count
-	#	Bookmark = !!($_.IsBookmark)
-	#	
-	# 	#sn= SecureNote?
-	# }
-	
-	
+					[PSCustomObject] @{
+						ID				= $_.ID
+						Name			= $_.Name
+						URL				= ($_.URL -split '([a-f0-9]{2})' | ForEach {
+												If($_){ [Char][Convert]::ToByte($_,16) }
+											}) -join ''
+						Group			= $_.Group | ConvertFrom-LPEncryptedString
+						Username		= $_.Username | ConvertFrom-LPEncryptedString 
+						Credential		= [PSCredential]::New(
+												($_.Login.U | ConvertFrom-LPEncryptedString),
+												($_.Login.P | ConvertFrom-LPEncryptedString |
+													ConvertTo-SecureString -AsPlainText -Force)
+											)
+						Notes			= $_.Extra | ConvertFrom-LPEncryptedString 
+						Favorite		= !!([Int] $_.Fav)
+						LastModified	= $Origin.AddSeconds($_.Last_Modified)
+						LastAccessed	= [DateTime]::Now
+						LaunchCount		= [Int] $_.Launch_Count
+						Bookmark		= !!([Int] $_.IsBookmark)
+						
+					} | Add-Member -Passthru -MemberType ScriptProperty -Name Password -Value {
+						$This.Credential.GetNetworkCredential().Password
+					} | Set-ObjectMetadata 'Account' | Write-Output
+				}
+		}
+		Else{
+			$Script:Blob.Accounts.Account | 
+				Where {$_.Name -and $_.sn -eq 0} |
+				Select ID, Name |
+				Write-Output
+		}
+	}	
 }
 
 
@@ -301,6 +315,114 @@ Move-Folder?
 
 
 #>
+
+
+Function New-Key {
+	<#
+	.SYNOPSIS
+	Generates a hash value
+	
+	.DESCRIPTION
+	Long description
+	
+	.PARAMETER ParameterName
+	Parameter description
+	
+	.EXAMPLE
+	TODO
+	
+	.EXAMPLE
+	TODO
+	
+	.NOTES
+	#>
+	
+	[CmdletBinding()]
+	Param(
+		[PSCredential] $Credential,
+		[Int] $Iterations
+	)
+
+	$EncodedUsername = [Byte[]][Char[]] $Credential.Username.ToLower()
+	$EncodedPassword = [Byte[]][Char[]] $Credential.GetNetworkCredential().Password
+
+	$Key = Switch($Iterations){
+		1 {
+			[Security.Cryptography.SHA256Managed]::New().ComputeHash(
+				$EncodedUsername + $EncodedPassword
+			)
+			Break
+		}
+		{$_ -gt 1} {
+			[Security.Cryptography.Rfc2898DeriveBytes]::New(
+				$EncodedPassword, 
+				$EncodedUsername, 
+				$Iterations, 
+				[Security.Cryptography.HashAlgorithmName]::SHA256
+			).GetBytes(32)
+			Break
+		}
+		Default { Throw "Invalid Iteration value: '$Iterations'" }
+	}
+	Write-Debug "Key: $Key"
+	Write-Output $Key
+}
+
+
+Function New-LoginHash {
+	<#
+	.SYNOPSIS
+	 Short description
+	
+	.DESCRIPTION
+	Long description
+	
+	.PARAMETER ParameterName
+	Parameter description
+	
+	.EXAMPLE
+	TODO
+	
+	.EXAMPLE
+	TODO
+	
+	.NOTES
+	#>
+	
+	[CmdletBinding()]
+	Param(
+		[Byte[]] $Key,
+		[PSCredential] $Credential,
+		[Int] $Iterations
+	)
+	$Password = $Credential.GetNetworkCredential().Password
+	$Hash = Switch($Iterations){
+			1 {
+				[Security.Cryptography.SHA256Managed]::New().ComputeHash(
+					[Byte[]][Char[]] (
+						(($Key | ForEach { "{0:x2}" -f $_ }) -join '') + 
+						$Password
+					)
+				)
+				Break
+			}
+			{$_ -gt 1} {
+				[Security.Cryptography.Rfc2898DeriveBytes]::New(
+					$Key,
+					([Byte[]][Char[]] $Password),
+					1,
+					[Security.Cryptography.HashAlgorithmName]::SHA256
+				).GetBytes(32)
+				Break
+			}
+			Default { Throw "Invalid Iteration value: '$Iterations'" }
+		}
+	$Hash = ($Hash | ForEach { "{0:x2}" -f $_ }) -join ''
+	
+	Write-Debug "Hash: $Hash"
+	Write-Output $Hash
+}
+
 
 Function ConvertFrom-LPEncryptedString {
 	
@@ -364,4 +486,52 @@ Function ConvertFrom-LPEncryptedString {
 			) -join ''
 		}
 	}
+}
+
+
+Function Set-ObjectMetadata {
+	<#
+	.SYNOPSIS
+	Sets object type name and default display properties
+		
+	.PARAMETER InputObject
+	The object to set the type name and default display properties
+
+	.EXAMPLE
+	Set-Object $Object 'Type.Name' 'ID','Name','Value'
+	Sets the PSTypeName to 'Type.Name' and the default display
+	properties to the ID, the Name and the Value properties
+	
+	.EXAMPLE
+	$Object | Set-Object -TypeName 'Type.Name' -DefaultDisplayProperties @('ID','User')
+	#>
+	
+	[CmdletBinding()]
+	Param(
+		[Parameter(Mandatory, Position = 1)]
+		[String] $TypeName,
+
+		[Parameter(
+			Mandatory,
+			Position = 2,
+			ValueFromPipeline
+		)]
+		[PSCustomObject] $InputObject
+		
+	)
+	
+	$InputObject.PSTypeNames[0] = "Lastpass.$TypeName"
+
+	$Param = @{
+		MemberType = 'MemberSet'
+		Name = 'PSStandardMembers'
+		Passthru = $True
+		Value = [Management.Automation.PSPropertySet]::New(
+			'DefaultDisplayPropertySet',
+			[String[]] $Script:TypeDisplayProperties[$TypeName]
+		)
+	}
+
+	$InputObject | Add-Member @Param
+	
 }

@@ -24,6 +24,8 @@ InModuleScope Lastpass {
 							SessionID		= 'SessionIDHere1232'
 							Token			= 'TokenHere12332o432i432'
 							PrivateKeyEnc	= 'TestPrivateKey0-324irfk49-'
+							Iterations		= '100100'
+							Username		= 'Username'
 						}
 					}
 				}
@@ -31,6 +33,10 @@ InModuleScope Lastpass {
 	
 		}
 		Mock @LoginMockParam
+
+		Mock Sync-Lastpass {
+			[XML] (Get-Content ./Vault.xml).Response
+		}
 
 		$Credential = [PSCredential]::New(
 			'Username',
@@ -50,6 +56,7 @@ InModuleScope Lastpass {
 			}
 		}
 		
+		# TODO: Refactor  this to separate tests for New-Key and New-LoginHash
 		Context 'Hash tests' {
 			@(
 				@{
@@ -202,11 +209,20 @@ InModuleScope Lastpass {
 
 	Describe Sync-Lastpass {
 
+		BeforeAll {
+			$Script:Session = [PSCustomObject] @{
+				Key = [Byte[]] @(
+					160,143,117,193,122,157,146,7,23,206,62,167,167,182,117,117,
+					60,118,172,154,146,119,36,238,73,80,241,107,95,3,40,236
+				)
+			}
+		}
+
 		$DownloadMockParam = @{
 			CommandName = 'Invoke-RestMethod'
 			ParameterFilter = { $URI -eq 'https://lastpass.com/getaccts.php'}
 		}
-		Mock @DownloadMockParam {}
+		Mock @DownloadMockParam { [XML] (Get-Content ./Vault.xml) }
 
 		$Result = Sync-Lastpass
 
@@ -215,12 +231,126 @@ InModuleScope Lastpass {
 		}
 
 		It 'Saves the blob to the module level variable' {
+			$Script:Blob | Should -Not -BeNullOrEmpty
+		}
 
+		It 'Decrypts the account names' {
+			@(
+				'ThisIsTheAccountName',
+				'SecureNote1',
+				'TestName#$/3'
+			) | Should -BeIn $Script:Blob.Accounts.Account.Name
 		}
 
 		It 'Outputs ?' {
 			
 		}
+
+	}
+
+	Describe Get-Account {
+
+		BeforeAll {
+			$Script:Blob = ([XML] (Get-Content ./Vault.xml)).Response
+			$Script:Session = [PSCustomObject] @{
+				Key = [Byte[]] @(
+					160,143,117,193,122,157,146,7,23,206,62,167,167,182,117,117,
+					60,118,172,154,146,119,36,238,73,80,241,107,95,3,40,236
+				)
+				Username = 'Username'
+				Iterations = '1'
+			}
+			$Script:Blob.Accounts.Account | ForEach { 
+				$_.SetAttribute('name', (ConvertFrom-LPEncryptedString $_.Name))
+			}
+		}
+
+		$Result = Get-Account
+
+		It 'Returns all accounts if no account name is specified' {
+
+			$Result.Count | Should -Be 2
+			@(
+				@{ ID = '1835977081662683158'; Name = 'ThisIsTheAccountName'},
+				@{ ID = '6989667599733115219'; Name = 'TestName#$/3' }
+			) | ForEach {
+				$Item = $_
+				$Result | Where {
+					$_.ID -eq $Item.ID -and
+					$_.Name -eq $Item.Name
+				} | Should -Not -BeNullOrEmpty
+			}
+		}
+		
+		$Result = Get-Account 'ThisIsTheAccountName'
+
+		It 'Gets account by Name' {
+			$Result.Count | Should -Be 1
+		}
+
+		It 'Decrypts the group' {
+			$Result.Group | Should -Be 'Productivity Tools'
+		}
+
+		It 'Decrypts the Username' {
+			$Result.Username | Should -Be 'ThisIsTheUsername'
+		}
+		
+		It 'Decrypts the Note Content' {
+			$Result.Notes | Should -Be 'These are arbitrary Notes attached to the Account'
+		}
+		
+		It 'Exposes the last modification timestamp as a DateTime object' {
+			$Result.LastModified | Should -BeOfType DateTime
+			$Result.LastModified | Should -Be ([DateTime] '12/14/18 7:37:21 PM')
+		}
+		
+		It 'Exposes the last access timestamp as a DateTime object' {
+			$Result.LastAccessed | Should -BeOfType DateTime
+			# $Result.LastAccessed | Should -Be ([DateTime] '1/25/19 3:09:08 AM')
+		}
+
+		It 'Updates the LastAccessed time' {
+			$Result.LastAccessed.DateTime | Should -Be ([DateTime]::Now.DateTime)
+		}
+		
+		It 'Exposes the password as a ScriptProperty' {
+			($Result.PSObject.Properties | Where Name -eq 'Password').MemberType | 
+				Should -Be ScriptProperty
+
+			$Result.Password | Should -Be 'ThisIsThePassword'
+		}
+
+		It 'Accepts pipeline input' {
+			$Result = 'ThisIsTheAccountName' | Get-Account
+			$Result.ID | Should -Be 1835977081662683158
+			$Result.PSTypeNames[0] | Should -Be 'Lastpass.Account'
+		}
+
+		It 'Prompts for master password if account is password protected' {
+			($Script:Blob.Accounts.Account |
+				Where Name -eq 'ThisIsTheAccountName').SetAttribute('pwprotect', 1)
+			Mock Read-Host { 'Password' | ConvertTo-SecureString -A -F }
+			Mock New-Key {
+				[Byte[]] @(
+					160,143,117,193,122,157,146,7,23,206,62,167,167,182,117,117,
+					60,118,172,154,146,119,36,238,73,80,241,107,95,3,40,236
+				)
+			} -ParameterFilter { $Credential.GetNetworkCredential().Password -eq 'Password' }
+
+			Get-Account 'ThisIsTheAccountName'
+			
+			Assert-MockCalled Read-Host
+		}
+
+		It 'Throws if master password check is wrong' {
+			Mock Read-Host {'NotTheCorrectPassword' | ConvertTo-SecureString -A -F}
+			{Get-Account 'ThisIsTheAccountName'} | Should -Throw
+			
+		}
+	}
+
+	Describe Set-Account {
 
 	}
 
@@ -282,47 +412,6 @@ InModuleScope Lastpass {
 			{ConvertFrom-LPEncryptedString 'InvalidString'} | Should -Throw
 		}
 	}
-
-	Describe Get-Account {
-
-		BeforeAll {
-			$Blob = @{}
-			$Session.Key = ''
-		}
-
-		# Behave similar to Get-KeyVaultSecret?
-
-		$Result = Get-Account
-
-		It 'Returns all accounts if no account name is specified' {	}
-		
-		$Result = Get-Account 'TestAccount'
-
-		It 'Gets account by path' {}
-
-		It 'Decodes the Name' {}
-
-		It 'Decrypts the group' {}
-
-		It 'Decrypts the Username' {}
-		
-		It 'Decrypts the Note Content' {}
-		
-		It 'Exposes the last modification timestamp as a DateTime object' {}
-		
-		It 'Exposes the last access timestamp as a DateTime object' {}
-		
-		It 'Exposes the password as a ScriptProperty' {}
-
-		It 'Prompts for password if account is password protected' {}
-
-		It 'Accepts pipeline input' {}
-	}
-
-	Describe Set-Account {
-
-	}
-
 
 }
 
