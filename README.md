@@ -1,29 +1,33 @@
 # Lastpass-PS
 Lastpass Powershell Module
 
-.DESCRIPTION
+DESCRIPTION
 ---
 Powershell module to interact with Lastpass.
-
+ 
 Built on pure Powershell/.NET core, designed to work without any other external dependencies to maximize cross platform portability.
 
 Based on [lastpass-cli](https://github.com/lastpass/lastpass-cli) and [lastpass-sharp](https://github.com/detunized/lastpass-sharp).
 
-.EXAMPLE
+EXAMPLE
 ---
 ```
-$Credential = [PSCredential]::New(
-	'eamil@provider.com',
-	(ConvertTo-SecureString -A -F 'password')
-)
-$Connection = Connect-Lastpass -Credential $Credential
+# Prompts for credentials
+Connect-Lastpass
 
-# Doesn't work yet
-$AllAccounts = Get-Account
+# You can also include the app MFA code
+$Credential = Get-Credential
+Connect-Lastpass -Credential $Credential -OneTimePassword '038502'
 
+# Get specific account by name
 $GmailAccount = Get-Account 'Gmail'
 
-$GmailAccount
+# Get PSCredential that can be used in other Powershell commands
+$GmailAccount.Credential
+
+# Or, get username and password directly
+$GmailAccount.Username
+$GmailAccount.Password
 ```
 
 STATUS AND FEATURES
@@ -33,10 +37,12 @@ This project is in early stages and currently only supports logging in, getting 
 Currently supported:
 * Login
 	* App OTP MFA
+* Get and decrypt accounts
+	* Supports password proptection
 
 Planned:
 * Accounts Support
-	* Create/read/update/delete
+	* Create/update/delete
 	* Move (folders)
 * Notes support
 	* Create/read/update/delete
@@ -51,7 +57,6 @@ Planned:
 	* Move
 	* Un/share
 	* Manage sharing
-* Password reprompt
 * Password generation
 	* Specific length, specify dis/allowed characters
 * Import/export
@@ -67,12 +72,13 @@ Ideas:
 
 INSTALLING
 ---
-Eventually: Install-Module Lastpass #From Powershell Gallery
-Currently: download; Import-Module /Path/To/Lastpass
+Currently: download; Import-Module /Path/To/Lastpass-PS
 
+Eventually: Install-Module Lastpass #From Powershell Gallery
 
 CONTRIBUTING
 ---
+TODO
 See Contribute wiki page.
 Tests (Pester/TDD), Design (Powershell/.NET core base)
 
