@@ -10,6 +10,10 @@ pool:
   vmImage: 'Ubuntu-16.04'
 
 steps:
+- pwsh: Install-Module Pester -Force
+  displayName: Installing Pester
+  name: Dependencies
+  
 - pwsh: Invoke-Pester
   displayName: Running tests
   name: Tests
