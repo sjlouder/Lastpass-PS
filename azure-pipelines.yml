@@ -14,6 +14,11 @@ steps:
   displayName: Installing Pester
   name: Dependencies
   
-- pwsh: Invoke-Pester
+- pwsh: Invoke-Pester -OutputFormat NUnitXML -OutputFile ./Tests.XML
   displayName: Running tests
   name: Tests
+
+- task: PublishTestResults@2
+  inputs:
+    testResultsFormat: NUnit
+    testResultsFiles: ./Tests.xml
