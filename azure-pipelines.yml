@@ -21,4 +21,4 @@ steps:
 - task: PublishTestResults@2
   inputs:
     testResultsFormat: NUnit
-    testResultsFiles: ./Tests.xml
+    testResultsFiles: '**/Tests.xml'
