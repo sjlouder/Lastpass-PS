@@ -1,0 +1,24 @@
+# Starter pipeline
+# Start with a minimal pipeline that you can customize to build and deploy your code.
+# Add steps that build, run tests, deploy, and more:
+# https://aka.ms/yaml
+
+# trigger:
+# - master
+
+pool:
+  vmImage: 'Ubuntu-16.04'
+
+steps:
+- pwsh: Install-Module Pester -Force -Scope CurrentUser
+  displayName: Installing Pester
+  name: Dependencies
+  
+- pwsh: Invoke-Pester -OutputFormat NUnitXML -OutputFile $(Build.ArtifactStagingDirectory)/Tests.XML
+  displayName: Running tests
+  name: Tests
+
+- task: PublishTestResults@2
+  inputs:
+    testResultsFormat: NUnit
+    testResultsFiles: $(Build.ArtifactStagingDirectory)/Tests.XML
