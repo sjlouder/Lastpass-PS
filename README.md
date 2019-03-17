@@ -5,7 +5,6 @@ Lastpass Powershell Module
 
 DESCRIPTION
 =======
----
 Powershell module to interact with Lastpass.
  
 Built on pure Powershell/.NET core, designed to work without any other external dependencies to maximize cross platform portability.
