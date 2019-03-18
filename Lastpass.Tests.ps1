@@ -414,31 +414,3 @@ InModuleScope Lastpass {
 	}
 
 }
-
-#Connect-Lastpass
-#Multiple accounts?
-
-#Get-Account
-# Only returns password when specifically 
-# Make a ScriptMethod
-
-# Lastpass:/ drive
-#	Folders
-#		Accounts
-#		Notes
-#	Accounts (No Dolders)
-#	Notes 
-# Encrypted group strings are different for each account
-# Might need to decrypt them all at start?
-
-
-#Mass import/export
-
-
-#Multiple accounts
-
-# Reuse Existing Lpass cli
-
-# Password generation
-#	Specify allowed/disallowed characters
-
