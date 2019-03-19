@@ -1,6 +1,9 @@
-Import-Module -Force $PSScriptRoot/Lastpass.psm1 -Verbose:$False
+Import-Module -Force $PSScriptRoot/../Lastpass -Verbose:$False
 
 InModuleScope Lastpass {
+
+	$ScriptRoot = $PSScriptRoot
+
 	Describe Connect-Lastpass {
 
 		# Catch all mock to make sure tests don't reach out to the internet
@@ -35,7 +38,7 @@ InModuleScope Lastpass {
 		Mock @LoginMockParam
 
 		Mock Sync-Lastpass {
-			[XML] (Get-Content ./Vault.xml).Response
+			[XML] (Get-Content "$ScriptRoot/Vault.xml").Response
 		}
 
 		$Credential = [PSCredential]::New(
@@ -222,7 +225,7 @@ InModuleScope Lastpass {
 			CommandName = 'Invoke-RestMethod'
 			ParameterFilter = { $URI -eq 'https://lastpass.com/getaccts.php'}
 		}
-		Mock @DownloadMockParam { [XML] (Get-Content ./Vault.xml) }
+		Mock @DownloadMockParam { [XML] (Get-Content $ScriptRoot/Vault.xml) }
 
 		$Result = Sync-Lastpass
 
@@ -251,7 +254,7 @@ InModuleScope Lastpass {
 	Describe Get-Account {
 
 		BeforeAll {
-			$Script:Blob = ([XML] (Get-Content ./Vault.xml)).Response
+			$Script:Blob = ([XML] (Get-Content $ScriptRoot/Vault.xml)).Response
 			$Script:Session = [PSCustomObject] @{
 				Key = [Byte[]] @(
 					160,143,117,193,122,157,146,7,23,206,62,167,167,182,117,117,
