@@ -1,4 +1,4 @@
-Import-Module -Force $PSScriptRoot/../Lastpass.psm1 -Verbose:$False
+Import-Module -Force $PSScriptRoot/../Lastpass -Verbose:$False
 
 InModuleScope Lastpass {
 	Describe Connect-Lastpass {
