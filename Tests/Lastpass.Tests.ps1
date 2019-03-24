@@ -1,6 +1,6 @@
 Import-Module -Force $PSScriptRoot/../Lastpass -Verbose:$False
 
-InModuleScope Lastpass {
+InModuleScope Lastpass {	
 
 	$ScriptRoot = $PSScriptRoot
 
@@ -287,19 +287,19 @@ InModuleScope Lastpass {
 		
 		$Result = Get-Account 'ThisIsTheAccountName'
 
-		It 'Gets account by Name' {
+		It 'Gets account by name' {
 			$Result.Count | Should -Be 1
 		}
 
-		It 'Decrypts the group' {
-			$Result.Group | Should -Be 'Productivity Tools'
+		It 'Decrypts the folder' {
+			$Result.Folder | Should -Be 'Productivity Tools'
 		}
 
-		It 'Decrypts the Username' {
+		It 'Decrypts the username' {
 			$Result.Username | Should -Be 'ThisIsTheUsername'
 		}
 		
-		It 'Decrypts the Note Content' {
+		It 'Decrypts the note content' {
 			$Result.Notes | Should -Be 'These are arbitrary Notes attached to the Account'
 		}
 		
@@ -413,6 +413,13 @@ InModuleScope Lastpass {
 
 		It 'Throws when invalid data is passed' {
 			{ConvertFrom-LPEncryptedString 'InvalidString'} | Should -Throw
+		}
+
+		It 'Throws when no key is set' {
+			$Session.Key = $Null
+
+			{ConvertFrom-LPEncryptedString 'AnythingHere'} |
+				Should -Throw 'Key not specified. Use Connect-Lastpass to set the key.'
 		}
 	}
 

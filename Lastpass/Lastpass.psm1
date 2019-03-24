@@ -18,7 +18,15 @@
 $Script:Origin = [DateTime] '1970-01-01 00:00:00'
 $Script:TypeDisplayProperties = @{
 	Account = @(
-
+		'Name'
+		'Username'
+		'Folder'
+		'Favorite'
+	)
+	Note = @(
+		'Name'
+		'Folder'
+		'Favorite'
 	)
 }
 
@@ -56,7 +64,7 @@ Function Connect-Lastpass {
 	.EXAMPLE
 	Connect-Lastpass -Credential $Credential -OneTimePassword 158320
 	Logs in to Lastpass, with the credentials saved in the $Credential
-	variable. Includes the one time password 
+	variable. Includes the one time password.
 	#>
 	
 	[CmdletBinding()]
@@ -177,6 +185,7 @@ Function Sync-Lastpass {
 		WebSession = $WebSession
 		URI = 'https://lastpass.com/getaccts.php'
 		Body = @{ RequestSrc = 'cli' }
+		ErrorAction = 'Stop'
 	}
 	"Sync parameters:`n{0}" -f ($Param.Body | Out-String) | Write-Debug
 	$Response = (Invoke-RestMethod @Param).Response
@@ -207,7 +216,7 @@ Function Get-Session {
 
 
 
-Function Get-Account {
+Function Get-Item {
 
 	[CmdletBinding()]
 	Param(
@@ -215,18 +224,24 @@ Function Get-Account {
 			ValueFromPipeline,
 			ValueFromPipelineByPropertyName
 		)]
-		[String] $Name
+		[String] $Name,
+
+		[ValidateSet('Account', 'Note', 'All')]
+		[String] $Type = 'All'
 	)
 	PROCESS {
 		If($Name){
 			$Script:Blob.Accounts.Account |
-				Where {$_.SN -eq 0 -and $_.Name -eq $Name} |
-				ForEach {
+				Where {
+					$_.Name -eq $Name -and
+					($Type -eq 'All' -or
+					!!([Int] $_.SN) -eq ($Type -eq 'Note'))
+				} | ForEach {
 					If(!!([Int] $_.PWProtect) -and $PasswordPrompt -lt (
-								[Datetime]::Now.Subtract($PasswordTimeout))){
+								[DateTime]::Now.Subtract($PasswordTimeout))){
 						# TODO: Should this loop? Possibly for a set number of retries?
 						$Password = Read-Host -AsSecureString 'Please confirm your password'
-						$Credential = [pscredential]::New($Script:Session.Username, $Password)
+						$Credential = [PSCredential]::New($Script:Session.Username, $Password)
 						$Key = New-Key -Credential $Credential -Iterations $Script:Session.Iterations
 
 						$Param = @{
@@ -235,42 +250,137 @@ Function Get-Account {
 							SyncWindow		 = 0
 						}
 						If(Compare-Object @Param){ Throw 'Password confirmation failed' }
-						$Script:PasswordPrompt = [datetime]::Now
+						$Script:PasswordPrompt = [DateTime]::Now
 					}
 
-					[PSCustomObject] @{
-						ID				= $_.ID
-						Name			= $_.Name
-						URL				= ($_.URL -split '([a-f0-9]{2})' | ForEach {
-												If($_){ [Char][Convert]::ToByte($_,16) }
+					If(!([Int]$_.SN)){
+						[PSCustomObject] @{
+							ID			 = $_.ID
+							Name		 = $_.Name
+							URL			 = ($_.URL -split '([a-f0-9]{2})' | ForEach {
+													If($_){ [Char][Convert]::ToByte($_,16) }
 											}) -join ''
-						Group			= $_.Group | ConvertFrom-LPEncryptedString
-						Username		= $_.Username | ConvertFrom-LPEncryptedString 
-						Credential		= [PSCredential]::New(
+							Folder		 = $_.Group | ConvertFrom-LPEncryptedString
+							Username	 = $_.Username | ConvertFrom-LPEncryptedString 
+							Credential	 = [PSCredential]::New(
 												($_.Login.U | ConvertFrom-LPEncryptedString),
 												($_.Login.P | ConvertFrom-LPEncryptedString |
 													ConvertTo-SecureString -AsPlainText -Force)
 											)
-						Notes			= $_.Extra | ConvertFrom-LPEncryptedString 
-						Favorite		= !!([Int] $_.Fav)
-						LastModified	= $Origin.AddSeconds($_.Last_Modified)
-						LastAccessed	= [DateTime]::Now
-						LaunchCount		= [Int] $_.Launch_Count
-						Bookmark		= !!([Int] $_.IsBookmark)
-						
-					} | Add-Member -Passthru -MemberType ScriptProperty -Name Password -Value {
-						$This.Credential.GetNetworkCredential().Password
-					} | Set-ObjectMetadata 'Account' | Write-Output
+							Notes		 = $_.Extra | ConvertFrom-LPEncryptedString 
+							Favorite	 = !!([Int] $_.Fav)
+							LastModified = $Origin.AddSeconds($_.Last_Modified)
+							LastAccessed = [DateTime]::Now
+							LaunchCount	 = [Int] $_.Launch_Count
+							Bookmark	 = !!([Int] $_.IsBookmark)
+							
+						} | Add-Member -Passthru -MemberType ScriptProperty -Name Password -Value {
+							$This.Credential.GetNetworkCredential().Password
+						} | Set-ObjectMetadata 'Account' | Write-Output
+					}
+					Else{
+						[PSCustomObject] @{
+							ID			 = $_.ID
+							Name		 = $_.Name
+							Content		 = $_.Extra | ConvertFrom-LPEncryptedString
+							Folder		 = $_.Group | ConvertFrom-LPEncryptedString
+							Favorite	 = !!([Int] $_.Fav)
+							LastModified = $Origin.AddSeconds($_.Last_Modified)
+							LastAccessed = [DateTime]::Now
+							# NoteType
+						} | Set-ObjectMetadata 'Note' | Write-Output
+					}
 				}
 		}
 		Else{
-			$Script:Blob.Accounts.Account | 
-				Where {$_.Name -and $_.sn -eq 0} |
-				Select ID, Name |
+			$Script:Blob.Accounts.Account |
+				Where {
+					$_.Name -and 
+					($Type -eq 'All' -or 
+						!!([Int] $_.SN) -eq ($Type -eq 'Note'))
+				} |
+				Select ID, Name | 
 				Write-Output
 		}
 	}	
 }
+
+
+
+Function Get-Account {
+	<#
+	.SYNOPSIS
+	Returns one or more Lastpass accounts/sites
+	
+	.DESCRIPTION
+	Long description
+	
+	.PARAMETER Name
+	The name of the account to return
+	
+	.EXAMPLE
+	Get-Account
+	Returns a list of all account IDs and names
+	
+	.EXAMPLE
+	Get-Account -Name 'Email'
+	Returns all accounts named 'Email'
+	
+	.NOTES
+	#>
+	
+	[CmdletBinding()]
+	Param(
+		[Parameter(
+			ValueFromPipeline,
+			ValueFromPipelineByPropertyName
+		)]
+		[String] $Name
+	)
+	
+	$Param = @{ Type = 'Account' }
+	If($Name){ $Param.Name = $Name }
+	Get-Item @Param
+}
+
+
+
+Function Get-Note {
+	<#
+	.SYNOPSIS
+	Returns a list of the available notes, or specific notes by name
+	
+	.DESCRIPTION
+	Long description
+	
+	.PARAMETER Name
+	The name of the account to return
+	
+	.EXAMPLE
+	Get-Account
+	Returns a list of all account IDs and names
+	
+	.EXAMPLE
+	Get-Account -Name 'Email'
+	Returns all accounts named 'Email'
+	
+	.NOTES
+	#>
+	
+	[CmdletBinding()]
+	Param(
+		[Parameter(
+			ValueFromPipeline,
+			ValueFromPipelineByPropertyName
+		)]
+		[String] $Name
+	)
+	
+	$Param = @{ Type = 'Note' }
+	If($Name){ $Param.Name = $Name }
+	Get-Item @Param
+}
+
 
 
 <#
@@ -284,9 +394,6 @@ Remove-Account {}
 
 
 New-Note {}
-
-
-Get-Note {}
 
 
 Set-Note {}
@@ -454,6 +561,7 @@ Function ConvertFrom-LPEncryptedString {
 	)
 
 	BEGIN {
+		If(!$Session.Key){Throw 'Key not specified. Use Connect-Lastpass to set the key.'}
 		$AES = [System.Security.Cryptography.AesManaged]::New()
 		$AES.KeySize = 256
 		$AES.Key = $Session.Key
