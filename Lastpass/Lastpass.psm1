@@ -15,7 +15,7 @@
 # with this program; if not, write to the Free Software Foundation, Inc.,
 # 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 
-$Script:Origin = [DateTime] '1970-01-01 00:00:00'
+$Script:Epoch = [DateTime] '1970-01-01 00:00:00'
 $Script:TypeDisplayProperties = @{
 	Account = @(
 		'Name'
@@ -191,6 +191,7 @@ Function Sync-Lastpass {
 	$Response = (Invoke-RestMethod @Param).Response
 
 	If($Response.Error){ Throw $Response.Error.Cause }
+	If($PSBoundParameters.Debug){ Write-Output $Response }
 
 	$Script:Blob = $Response
 	$Script:LastSyncTime = Get-Date
@@ -201,7 +202,6 @@ Function Sync-Lastpass {
 	}
 
 	#Output?
-	If($PSBoundParameters.Debug){ Write-Output $Response }
 }
 
 
@@ -269,7 +269,7 @@ Function Get-Item {
 											)
 							Notes		 = $_.Extra | ConvertFrom-LPEncryptedString 
 							Favorite	 = !!([Int] $_.Fav)
-							LastModified = $Origin.AddSeconds($_.Last_Modified)
+							LastModified = $Epoch.AddSeconds($_.Last_Modified)
 							LastAccessed = [DateTime]::Now
 							LaunchCount	 = [Int] $_.Launch_Count
 							Bookmark	 = !!([Int] $_.IsBookmark)
@@ -285,7 +285,7 @@ Function Get-Item {
 							Content		 = $_.Extra | ConvertFrom-LPEncryptedString
 							Folder		 = $_.Group | ConvertFrom-LPEncryptedString
 							Favorite	 = !!([Int] $_.Fav)
-							LastModified = $Origin.AddSeconds($_.Last_Modified)
+							LastModified = $Epoch.AddSeconds($_.Last_Modified)
 							LastAccessed = [DateTime]::Now
 							# NoteType
 						} | Set-ObjectMetadata 'Note' | Write-Output
@@ -424,6 +424,7 @@ Move-Folder?
 #>
 
 
+
 Function New-Key {
 	<#
 	.SYNOPSIS
@@ -474,6 +475,7 @@ Function New-Key {
 	Write-Debug "Key: $Key"
 	Write-Output $Key
 }
+
 
 
 Function New-LoginHash {
@@ -529,6 +531,7 @@ Function New-LoginHash {
 	Write-Debug "Hash: $Hash"
 	Write-Output $Hash
 }
+
 
 
 Function ConvertFrom-LPEncryptedString {
@@ -595,6 +598,7 @@ Function ConvertFrom-LPEncryptedString {
 		}
 	}
 }
+
 
 
 Function Set-ObjectMetadata {
