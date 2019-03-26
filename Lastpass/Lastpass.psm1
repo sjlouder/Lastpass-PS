@@ -348,23 +348,21 @@ Function Get-Account {
 Function Get-Note {
 	<#
 	.SYNOPSIS
-	Returns a list of the available notes, or specific notes by name
-	
+	Returns Lastpass Notes
+
 	.DESCRIPTION
-	Long description
-	
+	Parses and decrypts Lastpass Notes. Returns a list of all notes if no name is specified, or specific notes if the name is specified. Supports password protection.
+
 	.PARAMETER Name
-	The name of the account to return
-	
+	The name of the note(s) to retrieve. If no name is specified, all notes are returned.
+
 	.EXAMPLE
-	Get-Account
-	Returns a list of all account IDs and names
-	
+	Get-Note
+	Returns a list of all notes in the Lastpass account. The returned objects do not have decrypted content.
+
 	.EXAMPLE
-	Get-Account -Name 'Email'
-	Returns all accounts named 'Email'
-	
-	.NOTES
+	Get-Note 'Bank PIN'
+	Returns all notes called 'Bank PIN', prompting for the password if the note is password protected.
 	#>
 	
 	[CmdletBinding()]
