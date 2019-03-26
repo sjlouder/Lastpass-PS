@@ -39,7 +39,7 @@ This project is in early stages and currently only supports logging in, getting 
 Currently supported:
 * Login
 	* App OTP MFA
-* Get and decrypt accounts
+* Get and decrypt accounts and notes
 	* Supports password proptection
 
 Planned:
@@ -47,7 +47,7 @@ Planned:
 	* Create/update/delete
 	* Move (folders)
 * Notes support
-	* Create/read/update/delete
+	* Create/update/delete
 	* Move
 	* Parse special types
 * Other Login methods

@@ -274,7 +274,7 @@ InModuleScope Lastpass {
 
 			$Result.Count | Should -Be 2
 			@(
-				@{ ID = '1835977081662683158'; Name = 'ThisIsTheAccountName'},
+				@{ ID = '1835977081662683158'; Name = 'ThisIsTheAccountName'}
 				@{ ID = '6989667599733115219'; Name = 'TestName#$/3' }
 			) | ForEach {
 				$Item = $_
@@ -286,20 +286,21 @@ InModuleScope Lastpass {
 		}
 		
 		$Result = Get-Account 'ThisIsTheAccountName'
+		$Now = [DateTime]::Now
 
-		It 'Gets account by Name' {
+		It 'Gets account by name' {
 			$Result.Count | Should -Be 1
 		}
 
-		It 'Decrypts the group' {
-			$Result.Group | Should -Be 'Productivity Tools'
+		It 'Decrypts the folder' {
+			$Result.Folder | Should -Be 'Productivity Tools'
 		}
 
-		It 'Decrypts the Username' {
+		It 'Decrypts the username' {
 			$Result.Username | Should -Be 'ThisIsTheUsername'
 		}
 		
-		It 'Decrypts the Note Content' {
+		It 'Decrypts the note content' {
 			$Result.Notes | Should -Be 'These are arbitrary Notes attached to the Account'
 		}
 		
@@ -314,7 +315,7 @@ InModuleScope Lastpass {
 		}
 
 		It 'Updates the LastAccessed time' {
-			$Result.LastAccessed.DateTime | Should -Be ([DateTime]::Now.DateTime)
+			$Result.LastAccessed.DateTime | Should -Be $Now.DateTime
 		}
 		
 		It 'Exposes the password as a ScriptProperty' {
@@ -355,6 +356,76 @@ InModuleScope Lastpass {
 
 	Describe Set-Account {
 
+	}
+
+	Describe Get-Note {
+
+		BeforeAll {
+			$Script:Blob = ([XML] (Get-Content $ScriptRoot/Vault.xml)).Response
+			$Script:Session = [PSCustomObject] @{
+				Key = [Byte[]] @(
+					160,143,117,193,122,157,146,7,23,206,62,167,167,182,117,117,
+					60,118,172,154,146,119,36,238,73,80,241,107,95,3,40,236
+				)
+				Username = 'Username'
+				Iterations = '1'
+			}
+			$Script:Blob.Accounts.Account | ForEach { 
+				$_.SetAttribute('name', (ConvertFrom-LPEncryptedString $_.Name))
+			}
+		}
+
+		$Result = Get-Note
+
+		It 'Returns a list of all note IDs and names if no name is specified' {
+			$Result.Count | Should -Be 2
+			@(
+				@{ ID = '7747528438954943634'; Name = 'SecureNote1' }
+				@{ ID = '1439364932042364774'; Name = 'Note In Folder' }
+			) | ForEach {
+				$Item = $_
+				$Result | Where {
+					$_.ID -eq $Item.ID -and
+					$_.Name -eq $Item.Name
+				} | Should -Not -BeNullOrEmpty
+			}
+
+		}
+
+		$Result = Get-Note 'Note In Folder'
+		$Now = [DateTime]::Now
+
+		It 'Returns a note by name' {
+			$Result.Count | Should -Be 1
+		}
+
+		It 'Decrypts the folder' {
+			# TODO: Update test data to include note in a folder
+			$Result.Folder | Should -Be 'Productivity Tools\TestFolderName'
+		}
+
+		It 'Decrypts the note content' {
+			$Result.Content | Should -Be (
+				"NoteType:Server`n" +
+				"Hostname:Server Note`n" +
+				"Username:TestUsername`n" +
+				"Password:SuperSecurePassword`n" +
+				"Notes:Abitrary notes of the secure note"
+			)
+		}
+
+		It 'Exposes the last modification timestamp as a DateTime object' {
+			$Result.LastModified | Should -BeOfType DateTime
+			$Result.LastModified | Should -Be ([DateTime] '3/26/19 12:04:29 AM')
+		}
+		
+		It 'Exposes the last access timestamp as a DateTime object' {
+			$Result.LastAccessed | Should -BeOfType DateTime
+		}
+
+		It 'Updates the LastAccessed time' {
+			$Result.LastAccessed.DateTime | Should -Be $Now.DateTime
+		}
 	}
 
 	Describe ConvertFrom-LPEncryptedString {
@@ -413,6 +484,13 @@ InModuleScope Lastpass {
 
 		It 'Throws when invalid data is passed' {
 			{ConvertFrom-LPEncryptedString 'InvalidString'} | Should -Throw
+		}
+
+		It 'Throws when no key is set' {
+			$Session.Key = $Null
+
+			{ConvertFrom-LPEncryptedString 'AnythingHere'} |
+				Should -Throw 'Key not specified. Use Connect-Lastpass to set the key.'
 		}
 	}
 
