@@ -251,6 +251,15 @@ InModuleScope Lastpass {
 
 	}
 
+	Describe New-Account {
+		It 'Sets the account id to 0' -skip {
+			Verify-MockCalled Invoke-RestMethod -ParameterFilter {
+				$URI -eq 'https://lastpass.com/show_website.php' -and
+				$Body.aid -eq '0'
+			}
+		}
+	}
+
 	Describe Get-Account {
 
 		BeforeAll {
@@ -356,6 +365,191 @@ InModuleScope Lastpass {
 
 	Describe Set-Account {
 
+		BeforeAll {
+			$Script:Blob = ([XML] (Get-Content $ScriptRoot/Vault.xml)).Response
+			$Script:Session = [PSCustomObject] @{
+				Key = [Byte[]] @(
+					160,143,117,193,122,157,146,7,23,206,62,167,167,182,117,117,
+					60,118,172,154,146,119,36,238,73,80,241,107,95,3,40,236
+				)
+				Username = 'Username'
+				Iterations = '1'
+			}
+			$Script:Blob.Accounts.Account | ForEach { 
+				$_.SetAttribute('name', (ConvertFrom-LPEncryptedString $_.Name))
+			}
+		}
+
+		$UpdateAPIMockParam = @{
+			CommandName = 'Invoke-RestMethod'
+			ParameterFilter = { $URI -eq 'https://lastpass.com/show_website.php' }
+			MockWith = {
+				#Write-Host 'in mock'
+				[XML] '<xmlresponse>
+					<result 
+						action="added" 
+						aid="5806258868441752428" 
+						urid="0" 
+						msg="accountupdated" 
+						acctname1="" 
+						acctname2="" 
+						acctname3="" 
+						acctname4="" 
+						acctname5="" 
+						acctname6="" 
+						grouping="!lRcc9xINpaUuHfd3Dt2sWZR8obQhQ==|NlyT/4wLJ4Vjfdstgxc2xVOk63eJ1dw61UURMC20vNOP8i/ImUqxiKXZ9mYjCbrmH5l" 
+						count="0" 
+						lasttouch="0000-00-00 00:00:00" 
+						editlink="" 
+						url="68747470733a2f2f676f6f676c652e636f6d" 
+						fav="1" 
+						launchjs="" 
+						deleted="0" 
+						remoteshare="0" 
+						username="!6hlToUTU2WMFvNIfds4rbaFjHv2bg==|TnC0fdsar55/KwXzSH/d5+2MRA==" 
+						localupdate="1" 
+						accts_version="134" 
+						pwprotect="1" 
+						submit_id="" 
+						captcha_id="" 
+						custom_js="">
+					</result>
+				</xmlresponse>'
+			}
+		}
+		Mock @UpdateAPIMockParam
+
+		Mock Sync-Lastpass {}
+
+		$Account = [PSCustomObject] @{
+			ID           = '5148901049320353252'
+			Name         = 'sitename'
+			URL          = 'http://url.com'
+			Folder       = 'NewFolder1\NewFolder2'
+			Username     = 'usernamehere2'
+			Credential   = [PSCredential]::New(
+								'usernamehere2',
+								(ConvertTo-SecureString -A -F 'fdsafdasfda')
+							)
+			Notes        = 'notecontent3'
+			Favorite     = $False
+			LastModified = [DateTime] '4/3/19 4:58:05 AM'
+			LastAccessed = [DateTime] '4/4/19 1:42:48 AM'
+			LaunchCount  = 0
+			Bookmark     = $False
+			Password     = 'fdsafdasfda'
+		}
+
+		# Test non-pipeline use case
+		#$Result = Set-Account -ID $Account.ID -PasswordProtect 
+		
+		# $Result = $Account | Set-Account -Username 'NewUsername'
+
+		# $Result = $Account | Set-Account -Password 'ThisIsTheNewPassword'
+
+		# $Result = $Account | Set-Account -Name 'NewName'
+
+		# $Result = $Account | Set-Account -URL 'https://NewURL.com'
+
+		# $Result = $Account | Set-Account -Notes 'These are the new notes'
+		#TODO: Test multiline notes
+
+		$Result = $Account | Set-Account -Username 'NewUsername' -Password 'newPassword'
+
+
+		It 'Calls the edit account API' {
+			Assert-MockCalled Invoke-RestMethod -ParameterFilter {
+				$URI -eq 'https://lastpass.com/show_website.php'
+			}
+		}
+		
+		It 'Encrypts the Account Name' {
+			Assert-MockCalled Invoke-RestMethod -ParameterFilter {
+				$URI -eq 'https://lastpass.com/show_website.php' -and
+				($Body.Name | ConvertFrom-LPEncryptedString) -eq $Account.Name
+			}
+		}
+		
+		It 'Encrypts the Username' {
+			Assert-MockCalled Invoke-RestMethod -ParameterFilter {
+				$URI -eq 'https://lastpass.com/show_website.php' -and
+				($Body.UserName | ConvertFrom-LPEncryptedString) -eq 'NewUsername'
+			}
+		}
+		
+		It 'Encrypts the Password' {
+			Assert-MockCalled Invoke-RestMethod -ParameterFilter {
+				$URI -eq 'https://lastpass.com/show_website.php' -and
+				($Body.Password | ConvertFrom-LPEncryptedString) -eq 'newPassword'
+			}
+		}
+		
+		It 'Encrypts the folder' {
+			Assert-MockCalled Invoke-RestMethod -ParameterFilter {
+				$URI -eq 'https://lastpass.com/show_website.php' -and
+				($Body.Grouping | ConvertFrom-LPEncryptedString) -eq $Account.Folder
+			}
+
+		}
+		
+		It 'Encrypts the note content' {
+			Assert-MockCalled Invoke-RestMethod -ParameterFilter {
+				$URI -eq 'https://lastpass.com/show_website.php' -and
+				($Body.Extra | ConvertFrom-LPEncryptedString) -eq $Account.Notes
+			}
+
+		}
+		
+		It 'Encodes the URL' {
+			Assert-MockCalled Invoke-RestMethod -ParameterFilter {
+				
+				# Write-Host $Body.URL
+				$URL = (($Body.URL -split '([a-f0-9]{2})' | ForEach {
+					If($_){ [Char][Convert]::ToByte($_,16) }
+				}) -join '') 
+				# Write-Host $URL
+				$URI -eq 'https://lastpass.com/show_website.php' -and
+				$URL -eq $Account.URL
+			}
+
+		}
+
+		It 'Resyncs accounts' {
+			Assert-MockCalled Sync-Lastpass
+		}
+
+		It 'Includes password protect parameter if specified' {
+			$Account | Set-Account -PasswordProtect
+			Assert-MockCalled Invoke-RestMethod -ParameterFilter {
+				$URI -eq 'https://lastpass.com/show_website.php' -and
+				$Body.PWProtect	
+			} -Exactly -Times 1
+		}
+		
+		It 'Includes favorite parameter if specified' {
+			$Account | Set-Account -Favorite
+			Assert-MockCalled Invoke-RestMethod -ParameterFilter {
+				$URI -eq 'https://lastpass.com/show_website.php' -and
+				$Body.Fav	
+			} -Exactly -Times 1
+		}
+
+		It 'Includes autologin parameter if specified' {
+			$Account | Set-Account -AutoLogin
+			Assert-MockCalled Invoke-RestMethod -ParameterFilter {
+				$URI -eq 'https://lastpass.com/show_website.php' -and
+				$Body.AutoLogin	
+			} -Exactly -Times 1
+		}
+
+		It 'Includes disable autologin parameter if specified' {
+			$Account | Set-Account -DisableAutofill
+			Assert-MockCalled Invoke-RestMethod -ParameterFilter {
+				$URI -eq 'https://lastpass.com/show_website.php' -and
+				$Body.never_autofill
+			} -Exactly -Times 1
+		}
+		
 	}
 
 	Describe Get-Note {
@@ -400,7 +594,6 @@ InModuleScope Lastpass {
 		}
 
 		It 'Decrypts the folder' {
-			# TODO: Update test data to include note in a folder
 			$Result.Folder | Should -Be 'Productivity Tools\TestFolderName'
 		}
 
@@ -430,7 +623,9 @@ InModuleScope Lastpass {
 
 	Describe ConvertFrom-LPEncryptedString {
 		BeforeAll {
-			$Session.Key = [Convert]::FromBase64String("OfOUvVnQzB4v49sNh4+PdwIFb9Fr5+jVfWRTf+E2Ghg=")
+			$Script:Session = @{
+				Key = [Convert]::FromBase64String("OfOUvVnQzB4v49sNh4+PdwIFb9Fr5+jVfWRTf+E2Ghg=")
+			}
 		}
 
 		$TestCases = @(
@@ -490,8 +685,54 @@ InModuleScope Lastpass {
 			$Session.Key = $Null
 
 			{ConvertFrom-LPEncryptedString 'AnythingHere'} |
-				Should -Throw 'Key not specified. Use Connect-Lastpass to set the key.'
+				Should -Throw 'Key not found. Please login using Connect-Lastpass.'
 		}
+	}
+
+	Describe ConvertTo-LPEncryptedString {  
+		BeforeAll {
+			$Script:Session = @{
+				Key = [Convert]::FromBase64String("OfOUvVnQzB4v49sNh4+PdwIFb9Fr5+jVfWRTf+E2Ghg=")
+			}
+		}
+
+		# The IV is randomly generated, so can't know exact output
+		# will have to dynamically test using ConvertFrom-LPEncryptedString
+		$TestCases = @(
+			@{ Secret = '' }
+			@{ Secret = 'TestValue1' }
+		)
+		It 'Secret: <Secret>' -TestCases $TestCases {
+			Param(
+				[String] $Secret
+			)
+			
+			$Secret | ConvertTo-LPEncryptedString | ConvertFrom-LPEncryptedString |
+				Should -Be $Secret
+		}
+
+		It 'Generates a different IV each time' {
+			$String = 'RandomString'
+			$Result1 = $String | ConvertTo-LPEncryptedString
+			$Result2 = $String | ConvertTo-LPEncryptedString
+
+			$Result1[1..24] | Should -Not -Be $Result2[1..24]
+			$Result1 | ConvertFrom-LPEncryptedString |
+				Should -Be ($Result2 | ConvertFrom-LPEncryptedString)
+		}
+
+		It 'Outputs the string in the correct format' {
+			$Base64Regex = '(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?'
+			'AnyString'| ConvertTo-LPEncryptedString | Should -match ('^!{0}\|{0}$' -f $Base64Regex)
+		}
+		
+		It 'Throws when no key is set' {
+			$Session.Key = $Null
+
+			{ConvertTo-LPEncryptedString 'AnythingHere'} |
+				Should -Throw 'Key not found. Please login using Connect-Lastpass.'
+		}
+
 	}
 
 }

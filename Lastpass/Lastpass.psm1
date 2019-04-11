@@ -15,6 +15,8 @@
 # with this program; if not, write to the Free Software Foundation, Inc.,
 # 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 
+Using Namespace System.Security.Cryptography
+
 $Script:Epoch = [DateTime] '1970-01-01 00:00:00'
 $Script:TypeDisplayProperties = @{
 	Account = @(
@@ -139,6 +141,17 @@ Function Connect-Lastpass {
 			Username			= $Response.OK.LPUsername
 			Key					= $Key
 		}
+
+		$Cookie = [System.Net.Cookie]::New(
+			'PHPSESSID',
+			[System.Web.HttpUtility]::UrlEncode($Script:Session.SessionID),
+			'/',
+			'lastpass.com'
+		)
+
+		$Script:WebSession = [Microsoft.Powershell.Commands.WebRequestSession]::New()
+		$Script:WebSession.Cookies.Add($Cookie)
+		If(!$?){ Throw 'Unable to create session' }
 	}
 
 	Sync-Lastpass | Out-Null
@@ -171,18 +184,9 @@ Function Sync-Lastpass {
 	Param()
 
 	Write-Verbose 'Syncing Lastpass information'
-	$Cookie = [System.Net.Cookie]::New(
-		'PHPSESSID',
-		[System.Web.HttpUtility]::UrlEncode($Session.SessionID),
-		'/',
-		'lastpass.com'
-	)
-	$Script:WebSession = [Microsoft.Powershell.Commands.WebRequestSession]::New()
-	$WebSession.Cookies.Add($Cookie)
-	If(!$?){ Throw 'Unable to create session' }
-
+	
 	$Param = @{
-		WebSession = $WebSession
+		WebSession = $Script:WebSession
 		URI = 'https://lastpass.com/getaccts.php'
 		Body = @{ RequestSrc = 'cli' }
 		ErrorAction = 'Stop'
@@ -255,24 +259,25 @@ Function Get-Item {
 
 					If(!([Int]$_.SN)){
 						[PSCustomObject] @{
-							ID			 = $_.ID
-							Name		 = $_.Name
-							URL			 = ($_.URL -split '([a-f0-9]{2})' | ForEach {
+							ID				= $_.ID
+							Name			= $_.Name
+							URL				= ($_.URL -split '([a-f0-9]{2})' | ForEach {
 													If($_){ [Char][Convert]::ToByte($_,16) }
-											}) -join ''
-							Folder		 = $_.Group | ConvertFrom-LPEncryptedString
-							Username	 = $_.Username | ConvertFrom-LPEncryptedString 
-							Credential	 = [PSCredential]::New(
+												}) -join ''
+							Folder			= $_.Group | ConvertFrom-LPEncryptedString
+							Username		= $_.Username | ConvertFrom-LPEncryptedString 
+							Credential		= [PSCredential]::New(
 												($_.Login.U | ConvertFrom-LPEncryptedString),
 												($_.Login.P | ConvertFrom-LPEncryptedString |
 													ConvertTo-SecureString -AsPlainText -Force)
-											)
-							Notes		 = $_.Extra | ConvertFrom-LPEncryptedString 
-							Favorite	 = !!([Int] $_.Fav)
-							LastModified = $Epoch.AddSeconds($_.Last_Modified)
-							LastAccessed = [DateTime]::Now
-							LaunchCount	 = [Int] $_.Launch_Count
-							Bookmark	 = !!([Int] $_.IsBookmark)
+												)
+							Notes			= $_.Extra | ConvertFrom-LPEncryptedString 
+							Favorite		= !!([Int] $_.Fav)
+							Bookmark		= !!([Int] $_.IsBookmark)
+							PasswordProtect = !!([Int] $_.PWProtect)
+							LaunchCount		= [Int] $_.Launch_Count
+							LastModified	= $Epoch.AddSeconds($_.Last_Modified)
+							LastAccessed	= [DateTime]::Now
 							
 						} | Add-Member -Passthru -MemberType ScriptProperty -Name Password -Value {
 							$This.Credential.GetNetworkCredential().Password
@@ -280,13 +285,14 @@ Function Get-Item {
 					}
 					Else{
 						[PSCustomObject] @{
-							ID			 = $_.ID
-							Name		 = $_.Name
-							Content		 = $_.Extra | ConvertFrom-LPEncryptedString
-							Folder		 = $_.Group | ConvertFrom-LPEncryptedString
-							Favorite	 = !!([Int] $_.Fav)
-							LastModified = $Epoch.AddSeconds($_.Last_Modified)
-							LastAccessed = [DateTime]::Now
+							ID				= $_.ID
+							Name			= $_.Name
+							Content			= $_.Extra | ConvertFrom-LPEncryptedString
+							Folder			= $_.Group | ConvertFrom-LPEncryptedString
+							Favorite		= !!([Int] $_.Fav)
+							PasswordProtect	= !!([Int] $_.PWProtect)
+							LastModified	= $Epoch.AddSeconds($_.Last_Modified)
+							LastAccessed	= [DateTime]::Now
 							# NoteType
 						} | Set-ObjectMetadata 'Note' | Write-Output
 					}
@@ -303,6 +309,148 @@ Function Get-Item {
 				Write-Output
 		}
 	}	
+}
+
+
+
+Function Set-Item {
+	<#
+	.SYNOPSIS
+	 Short description
+	
+	.DESCRIPTION
+	Long description
+	
+	.PARAMETER ParameterName
+	Parameter description
+	
+	.EXAMPLE
+	Set-Item
+	
+	.EXAMPLE
+	Set-Item
+	#>
+	
+	[CmdletBinding(DefaultParameterSetName='Account')]
+	Param(
+		[Parameter(
+			Mandatory,
+			ValueFromPipelineByPropertyName
+		)]
+		[String] $ID,
+
+		[Parameter(
+			ValueFromPipelineByPropertyName
+		)]
+		[String] $Name,
+
+		[Parameter(
+			ParameterSetName='SecureNote',
+			ValueFromPipelineByPropertyName
+		)]
+		[Switch] $SecureNote,
+		
+		[Parameter(ValueFromPipelineByPropertyName)]
+		[String] $Folder,
+
+		[Parameter(
+			ParameterSetName='Account',
+			ValueFromPipelineByPropertyName
+		)]
+		[String] $URL,
+
+		[Parameter(
+			ParameterSetName='Account', 
+			ValueFromPipelineByPropertyName
+		)]
+		[String] $Username,
+
+		[Parameter(
+			ParameterSetName='Account',
+			ValueFromPipelineByPropertyName
+		)]
+		[String] $Password,	
+		
+		[Parameter(ValueFromPipelineByPropertyName)]
+		[Alias('Content','Extra')]
+		[String] $Notes,
+		
+		[Parameter(ValueFromPipelineByPropertyName)]
+		[Switch] $PasswordProtect,
+
+		[Parameter(ValueFromPipelineByPropertyName)]
+		[Switch] $Favorite,
+		
+		[Parameter(
+			ParameterSetName='Account',
+			ValueFromPipelineByPropertyName
+		)]
+		[Switch] $AutoLogin,
+
+		[Parameter(
+			ParameterSetName='Account',
+			ValueFromPipelineByPropertyName
+		)]
+		[Switch] $DisableAutofill		
+
+	)
+	BEGIN {
+		$Param = @{
+			URI = 'https://lastpass.com/show_website.php'
+			Method = 'POST'
+			WebSession = $Script:WebSession
+		}
+
+		$BaseBody = @{
+			extjs = 1
+			token = $Script:Session.Token
+			method = 'cli'
+		}
+
+	}
+
+	PROCESS {
+		
+		$Body = @{
+			aid			= $ID
+			name		= $Name | ConvertTo-LPEncryptedString
+			grouping	=  $Folder | ConvertTo-LPEncryptedString
+			url			= ([Byte[]][Char[]] $URL | ForEach { "{0:x2}" -f $_ }) -join ''
+			username	= $Username | ConvertTo-LPEncryptedString
+			password	= $Password | ConvertTo-LPEncryptedString
+			extra		= $Notes | ConvertTo-LPEncryptedString
+			<#
+			folder = 'user'		#, 'none', or name of default folder
+			#localupdate = 1	# ?
+			#ajax = 1			# ?
+			#source = 'vault'	# ?
+			#urid = 0			# ?
+			#auto = 1			# ?
+			#iid = ''			# ?
+			#>
+		}
+		If($PasswordProtect){ $Body.pwprotect = 'on' }
+		If($Favorite){ $Body.fav = 'on' }
+		If($AutoLogin){ $Body.autologin = 'on' }
+		If($DisableAutofill){ $Body.never_autofill = 'on' }
+		
+		"Request Parameters:`n{0}" -f ($Body | Out-String) | Write-Debug
+		$Response = Invoke-RestMethod @Param -Body ($BodyBase + $Body)
+		$Response.OuterXML | Out-String | Write-Debug
+		
+		Switch($Response.XMLResponse.Result.Msg){
+			'AccountCreated' {
+
+			}
+			'AccountUpdated' {
+
+				Break
+			}
+			Default { Throw "Failed to update $Name" }
+		}
+	}
+
+	END { Sync-Lastpass }
 }
 
 
@@ -341,6 +489,71 @@ Function Get-Account {
 	$Param = @{ Type = 'Account' }
 	If($Name){ $Param.Name = $Name }
 	Get-Item @Param
+}
+
+
+Function Set-Account {
+	<#
+	.SYNOPSIS
+	Updates a Lastpass Account
+	
+	.DESCRIPTION
+	Long description
+	
+	.PARAMETER ParameterName
+	Parameter description
+	
+	.EXAMPLE
+	Set-Account
+	
+	.EXAMPLE
+	Set-Account
+	#>
+	
+	[CmdletBinding()]
+	Param(
+		[Parameter(
+			Mandatory,
+			ValueFromPipelineByPropertyName
+		)]
+		[String] $ID,
+
+		[Parameter(
+			Mandatory,
+			ValueFromPipelineByPropertyName
+		)]
+		[String] $Name,
+		
+		[Parameter(ValueFromPipelineByPropertyName)]
+		[String] $Folder,
+
+		[Parameter(ValueFromPipelineByPropertyName)]
+		[String] $URL,
+
+		[Parameter(ValueFromPipelineByPropertyName)]
+		[String] $Username,		
+		
+		[Parameter(ValueFromPipelineByPropertyName)]
+		[String] $Password,
+		
+		[Parameter(ValueFromPipelineByPropertyName)]
+		[String] $Notes,
+
+		[Parameter(ValueFromPipelineByPropertyName)]
+		[Switch] $PasswordProtect,
+
+		[Parameter(ValueFromPipelineByPropertyName)]
+		[Switch] $Favorite,
+
+		[Parameter(ValueFromPipelineByPropertyName)]
+		[Switch] $AutoLogin,
+
+		[Parameter(ValueFromPipelineByPropertyName)]
+		[Switch] $DisableAutofill
+	)
+	
+	Set-Item @PSBoundParameters
+	
 }
 
 
@@ -454,17 +667,17 @@ Function New-Key {
 
 	$Key = Switch($Iterations){
 		1 {
-			[Security.Cryptography.SHA256Managed]::New().ComputeHash(
+			[SHA256Managed]::New().ComputeHash(
 				$EncodedUsername + $EncodedPassword
 			)
 			Break
 		}
 		{$_ -gt 1} {
-			[Security.Cryptography.Rfc2898DeriveBytes]::New(
+			[Rfc2898DeriveBytes]::New(
 				$EncodedPassword, 
 				$EncodedUsername, 
 				$Iterations, 
-				[Security.Cryptography.HashAlgorithmName]::SHA256
+				[HashAlgorithmName]::SHA256
 			).GetBytes(32)
 			Break
 		}
@@ -505,7 +718,7 @@ Function New-LoginHash {
 	$Password = $Credential.GetNetworkCredential().Password
 	$Hash = Switch($Iterations){
 			1 {
-				[Security.Cryptography.SHA256Managed]::New().ComputeHash(
+				[SHA256Managed]::New().ComputeHash(
 					[Byte[]][Char[]] (
 						(($Key | ForEach { "{0:x2}" -f $_ }) -join '') + 
 						$Password
@@ -514,11 +727,11 @@ Function New-LoginHash {
 				Break
 			}
 			{$_ -gt 1} {
-				[Security.Cryptography.Rfc2898DeriveBytes]::New(
+				[Rfc2898DeriveBytes]::New(
 					$Key,
 					([Byte[]][Char[]] $Password),
 					1,
-					[Security.Cryptography.HashAlgorithmName]::SHA256
+					[HashAlgorithmName]::SHA256
 				).GetBytes(32)
 				Break
 			}
@@ -562,8 +775,8 @@ Function ConvertFrom-LPEncryptedString {
 	)
 
 	BEGIN {
-		If(!$Session.Key){Throw 'Key not specified. Use Connect-Lastpass to set the key.'}
-		$AES = [System.Security.Cryptography.AesManaged]::New()
+		If(!$Session.Key){ Throw 'Key not found. Please login using Connect-Lastpass.' }
+		$AES = [AesManaged]::New()
 		$AES.KeySize = 256
 		$AES.Key = $Session.Key
 	}
@@ -574,13 +787,13 @@ Function ConvertFrom-LPEncryptedString {
 			#$_.Length -gt 32 -and
 			#('!{0}|{1}' -f $IV, $Data).Length % 16 -eq 1){
 				#TODO: Test whether Base64 conversion is necessary
-				$AES.Mode = [Security.Cryptography.CipherMode]::CBC
+				$AES.Mode = [CipherMode]::CBC
 				$Data = [Convert]::FromBase64String($_[26..($_.Length-1)])
 				$AES.IV = [Convert]::FromBase64String($_[1..24])
 			}	
 			Else{
 				Write-Debug 'ECB'
-				$AES.Mode = [Security.Cryptography.CipherMode]::ECB
+				$AES.Mode = [CipherMode]::ECB
 				$Data = [Convert]::FromBase64String($_)
 				$AES.IV = [Byte[]] '0'*16
 			}
@@ -593,6 +806,60 @@ Function ConvertFrom-LPEncryptedString {
 				0, 
 				$Data.length
 			) -join ''
+		}
+	}
+}
+
+
+
+Function ConvertTo-LPEncryptedString {
+	
+	<#
+	.SYNOPSIS
+	Encrypts Lastpass encoded strings
+		
+	.PARAMETER Value
+	The string to encrypt
+	
+	.EXAMPLE
+	ConvertTo-LPEncryptedString -Value 'SecretText'
+	Encrypts the input string 'SecretText
+	
+	.EXAMPLE
+	$DecryptedAccounts.Username | ConvertTo-LPEncryptedString
+	Encrypts the names of the accounts in the $DecryptedAccounts variable
+	#>
+	
+	Param (
+		[Parameter(
+			Mandatory,
+			ValueFromPipeline, 
+			ValueFromPipelineByPropertyName,
+			Position = 0
+		)]
+		[AllowEmptyString()]
+		[String[]] $Value
+	)
+
+	BEGIN {
+		If(!$Session.Key){ Throw 'Key not found. Please login using Connect-Lastpass.' }
+		$AES = [AesManaged]::New()
+		$AES.KeySize = 256
+		$AES.Key = $Session.Key
+		$AES.Mode = [CipherMode]::CBC
+	}
+	
+	PROCESS {
+		$Value | ForEach {
+			$AES.GenerateIV()
+			$Encryptor = $AES.CreateEncryptor()
+			
+			$EncryptedValue = $Encryptor.TransformFinalBlock([Byte[]][Char[]] $_, 0, $_.Length)
+			
+			'!{0}|{1}' -f @(
+				[Convert]::ToBase64String($AES.IV),
+				[Convert]::ToBase64String($EncryptedValue)
+			) | Write-Output
 		}
 	}
 }
