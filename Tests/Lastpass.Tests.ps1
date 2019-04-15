@@ -736,3 +736,40 @@ InModuleScope Lastpass {
 	}
 
 }
+
+Describe 'Documentation Tests' {
+	Get-Command -Module Lastpass | Get-Help | ForEach {
+		Describe $_.Name {
+						
+			It 'Has a synopsis' {
+				$_.Synopsis | Should -Not -BeNullOrEmpty
+				$_.Synopsis | Should -Not -Be 'Short description'
+			}
+
+			It 'Has a custom description' {
+				If(!$_.Description){ Write-Warning 'No description provided' }
+				$_.Description | Should -Not -Be 'Long description'
+			}
+			If($_.Parameters){
+				It 'Has a description for each parameter' {
+					$_.Parameters.Parameter | ForEach {
+						If(!$_.Description){
+							Throw "Parameter $($_.Name) does not have a description"
+						}
+					}
+				}
+			}
+			
+			If($_.Examples){
+				It 'Has a description for each example' {
+					If($_.Examples.Example.Count -lt 2){
+						Write-Warning 'Less than 2 examples provided'
+					}
+					$_.Examples.Example | ForEach {
+						$_.Remarks.Text[0] | ForEach {$_ | Should -Not -BeNullOrEmpty}
+					}
+				}
+			}
+		}
+	}
+}
