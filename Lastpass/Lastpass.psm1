@@ -1032,3 +1032,12 @@ Function Set-ObjectMetadata {
 	$InputObject | Add-Member @Param
 	
 }
+
+
+Export-ModuleMember -Function @(
+	'Connect-Lastpass'
+	'Sync-Lastpass'
+	'Get-Account'
+	'Set-Account'
+	'Get-Note'
+)
