@@ -1034,10 +1034,10 @@ Function Set-ObjectMetadata {
 }
 
 
-Export-ModuleMember -Function @(
-	'Connect-Lastpass'
-	'Sync-Lastpass'
-	'Get-Account'
-	'Set-Account'
-	'Get-Note'
-)
+# Export-ModuleMember -Function @(
+# 	'Connect-Lastpass'
+# 	'Sync-Lastpass'
+# 	'Get-Account'
+# 	'Set-Account'
+# 	'Get-Note'
+# )

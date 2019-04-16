@@ -738,7 +738,7 @@ InModuleScope Lastpass {
 }
 
 Describe 'Documentation Tests' {
-	Get-Command -Module Lastpass | Get-Help | ForEach {
+	Get-Command -Module Lastpass | Get-Help  -ov help | ForEach {
 		Describe $_.Name {
 						
 			It 'Has a synopsis' {
@@ -772,4 +772,6 @@ Describe 'Documentation Tests' {
 			}
 		}
 	}
+
+	$Help | Out-String | Write-Verbose
 }
