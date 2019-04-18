@@ -173,6 +173,9 @@ Function Sync-Lastpass {
 	.SYNOPSIS
 	Downloads Lastpass accounts from the server
 	
+	.DESCRIPTION
+	Updates (overwrites) the local cache of Lastpass items with the latest version on the server.
+	Decrypts the names of the items for later retrieval.
 
 	.EXAMPLE
 	Sync-LastpassBlob
@@ -210,13 +213,221 @@ Function Sync-Lastpass {
 
 
 
-#FIXME! Remove; for debugging purposes only
-Function Get-Session {
-	Return [PSCustomObject] @{
-		WebSession = $WebSession
-		Session = $Session
-	}
+Function Get-Account {
+	<#
+	.SYNOPSIS
+	Returns one or more Lastpass accounts/sites
+	
+	.DESCRIPTION
+	Long description
+	
+	.PARAMETER Name
+	The name of the account to return
+	
+	.EXAMPLE
+	Get-Account
+	Returns a list of all account IDs and names
+	
+	.EXAMPLE
+	Get-Account -Name 'Email'
+	Returns all accounts named 'Email'
+	#>
+	
+	[CmdletBinding()]
+	Param(
+		[Parameter(
+			ValueFromPipeline,
+			ValueFromPipelineByPropertyName
+		)]
+		[String] $Name
+	)
+	
+	$Param = @{ Type = 'Account' }
+	If($Name){ $Param.Name = $Name }
+	Get-Item @Param
 }
+
+
+Function Set-Account {
+	<#
+	.SYNOPSIS
+	Updates a Lastpass Account
+	
+	.DESCRIPTION
+	Sets the properties of a Lastpass account.
+	Does a full overwrite (ie. any parameters not included will be
+	deleted if they existed as part of the account previously) 
+	
+	.PARAMETER ID
+	The ID of the account
+
+	.PARAMETER Name
+	The name of the account
+
+	.PARAMETER Folder
+	The directory path that contains the account
+
+	.PARAMETER URL
+	The URL of the account
+
+	.PARAMETER Username
+	The username of the account
+
+	.PARAMETER Password
+	The password of the account
+
+	.PARAMETER Notes
+	The notes tied to the account
+
+	.PARAMETER PasswordProtect
+	Whether to require a password reprompt to access the account
+	
+	.PARAMETER Favorite
+	Whether the account is marked as a favorite
+
+	.PARAMETER AutoLogin
+	If set, the Lastpass browser plugin will automatically 
+	fill and submit the login on the account's website
+	
+	.PARAMETER DisableAutofill
+	If set, the Lastpass browser plugin will not autofill the account on the website
+
+	.EXAMPLE
+	Set-Account -ID 10248 -Name 'NewName'
+	Sets the account with ID 10248 to have the name 'NewName'.
+	Note that any username, password, notes, or other properties of the account will be overwritten.
+	
+	.EXAMPLE
+	Get-Account 'Email' | Set-Account -PasswordProtect
+	Gets the account named 'Email', and passes it to Set-Account to update the account to require
+	a password to access. Passing in an account object will include all of the existing properties,
+	so Set-Account will effectively perform an update, only overwriting the parameters explicitly
+	passed in.	
+	#>
+	
+	[CmdletBinding()]
+	Param(
+		[Parameter(
+			Mandatory,
+			ValueFromPipelineByPropertyName
+		)]
+		[String] $ID,
+
+		[Parameter(
+			Mandatory,
+			ValueFromPipelineByPropertyName
+		)]
+		[String] $Name,
+		
+		[Parameter(ValueFromPipelineByPropertyName)]
+		[String] $Folder,
+
+		[Parameter(ValueFromPipelineByPropertyName)]
+		[String] $URL,
+
+		[Parameter(ValueFromPipelineByPropertyName)]
+		[String] $Username,		
+		
+		[Parameter(ValueFromPipelineByPropertyName)]
+		[String] $Password,
+		
+		[Parameter(ValueFromPipelineByPropertyName)]
+		[String] $Notes,
+
+		[Parameter(ValueFromPipelineByPropertyName)]
+		[Switch] $PasswordProtect,
+
+		[Parameter(ValueFromPipelineByPropertyName)]
+		[Switch] $Favorite,
+
+		[Parameter(ValueFromPipelineByPropertyName)]
+		[Switch] $AutoLogin,
+
+		[Parameter(ValueFromPipelineByPropertyName)]
+		[Switch] $DisableAutofill
+	)
+	
+	Set-Item @PSBoundParameters
+	
+}
+
+
+
+Function Get-Note {
+	<#
+	.SYNOPSIS
+	Returns Lastpass Notes
+
+	.DESCRIPTION
+	Parses and decrypts Lastpass Notes.
+	Returns a list of all notes if no name is specified, or specific notes if the name is specified.
+	Supports password protection.
+
+	.PARAMETER Name
+	The name of the note(s) to retrieve. If no name is specified, all notes are returned.
+
+	.EXAMPLE
+	Get-Note
+	Returns a list of all notes in the Lastpass account.
+	The returned objects do not have decrypted content.
+
+	.EXAMPLE
+	Get-Note 'Bank PIN'
+	Returns all notes called 'Bank PIN', prompting for the password if the note is password protected.
+	#>
+	
+	[CmdletBinding()]
+	Param(
+		[Parameter(
+			ValueFromPipeline,
+			ValueFromPipelineByPropertyName
+		)]
+		[String] $Name
+	)
+	
+	$Param = @{ Type = 'Note' }
+	If($Name){ $Param.Name = $Name }
+	Get-Item @Param
+}
+
+
+
+<#
+New-Account {}
+
+
+Remove-Account {}
+
+
+New-Note {}
+
+
+Set-Note {}
+
+
+Remove-Note {}
+
+
+New-Folder {}
+
+
+Get-Folder {}
+
+
+Set-Folder {}
+	-Sharing
+
+
+Remove-Folder {}
+
+
+Reset-MasterPassword {}
+
+
+Move-Folder?
+
+
+#>
 
 
 
@@ -524,224 +735,6 @@ Function Set-Item {
 
 
 
-Function Get-Account {
-	<#
-	.SYNOPSIS
-	Returns one or more Lastpass accounts/sites
-	
-	.DESCRIPTION
-	Long description
-	
-	.PARAMETER Name
-	The name of the account to return
-	
-	.EXAMPLE
-	Get-Account
-	Returns a list of all account IDs and names
-	
-	.EXAMPLE
-	Get-Account -Name 'Email'
-	Returns all accounts named 'Email'
-	#>
-	
-	[CmdletBinding()]
-	Param(
-		[Parameter(
-			ValueFromPipeline,
-			ValueFromPipelineByPropertyName
-		)]
-		[String] $Name
-	)
-	
-	$Param = @{ Type = 'Account' }
-	If($Name){ $Param.Name = $Name }
-	Get-Item @Param
-}
-
-
-Function Set-Account {
-	<#
-	.SYNOPSIS
-	Updates a Lastpass Account
-	
-	.DESCRIPTION
-	Sets the properties of a Lastpass account.
-	Does a full overwrite (ie. any parameters not included will be
-	deleted if they existed as part of the account previously) 
-	
-	.PARAMETER ID
-	The ID of the account
-
-	.PARAMETER Name
-	The name of the account
-
-	.PARAMETER Folder
-	The directory path that contains the account
-
-	.PARAMETER URL
-	The URL of the account
-
-	.PARAMETER Username
-	The username of the account
-
-	.PARAMETER Password
-	The password of the account
-
-	.PARAMETER Notes
-	The notes tied to the account
-
-	.PARAMETER PasswordProtect
-	Whether to require a password reprompt to access the account
-	
-	.PARAMETER Favorite
-	Whether the account is marked as a favorite
-
-	.PARAMETER AutoLogin
-	If set, the Lastpass browser plugin will automatically 
-	fill and submit the login on the account's website
-	
-	.PARAMETER DisableAutofill
-	If set, the Lastpass browser plugin will not autofill the account on the website
-
-	.EXAMPLE
-	Set-Account -ID 10248 -Name 'NewName'
-	Sets the account with ID 10248 to have the name 'NewName'.
-	Note that any username, password, notes, or other properties of the account will be overwritten.
-	
-	.EXAMPLE
-	Get-Account 'Email' | Set-Account -PasswordProtect
-	Gets the account named 'Email', and passes it to Set-Account to update the account to require
-	a password to access. Passing in an account object will include all of the existing properties,
-	so Set-Account will effectively perform an update, only overwriting the parameters explicitly
-	passed in.	
-	#>
-	
-	[CmdletBinding()]
-	Param(
-		[Parameter(
-			Mandatory,
-			ValueFromPipelineByPropertyName
-		)]
-		[String] $ID,
-
-		[Parameter(
-			Mandatory,
-			ValueFromPipelineByPropertyName
-		)]
-		[String] $Name,
-		
-		[Parameter(ValueFromPipelineByPropertyName)]
-		[String] $Folder,
-
-		[Parameter(ValueFromPipelineByPropertyName)]
-		[String] $URL,
-
-		[Parameter(ValueFromPipelineByPropertyName)]
-		[String] $Username,		
-		
-		[Parameter(ValueFromPipelineByPropertyName)]
-		[String] $Password,
-		
-		[Parameter(ValueFromPipelineByPropertyName)]
-		[String] $Notes,
-
-		[Parameter(ValueFromPipelineByPropertyName)]
-		[Switch] $PasswordProtect,
-
-		[Parameter(ValueFromPipelineByPropertyName)]
-		[Switch] $Favorite,
-
-		[Parameter(ValueFromPipelineByPropertyName)]
-		[Switch] $AutoLogin,
-
-		[Parameter(ValueFromPipelineByPropertyName)]
-		[Switch] $DisableAutofill
-	)
-	
-	Set-Item @PSBoundParameters
-	
-}
-
-
-
-Function Get-Note {
-	<#
-	.SYNOPSIS
-	Returns Lastpass Notes
-
-	.DESCRIPTION
-	Parses and decrypts Lastpass Notes.
-	Returns a list of all notes if no name is specified, or specific notes if the name is specified.
-	Supports password protection.
-
-	.PARAMETER Name
-	The name of the note(s) to retrieve. If no name is specified, all notes are returned.
-
-	.EXAMPLE
-	Get-Note
-	Returns a list of all notes in the Lastpass account.
-	The returned objects do not have decrypted content.
-
-	.EXAMPLE
-	Get-Note 'Bank PIN'
-	Returns all notes called 'Bank PIN', prompting for the password if the note is password protected.
-	#>
-	
-	[CmdletBinding()]
-	Param(
-		[Parameter(
-			ValueFromPipeline,
-			ValueFromPipelineByPropertyName
-		)]
-		[String] $Name
-	)
-	
-	$Param = @{ Type = 'Note' }
-	If($Name){ $Param.Name = $Name }
-	Get-Item @Param
-}
-
-
-
-<#
-New-Account {}
-
-
-Remove-Account {}
-
-
-New-Note {}
-
-
-Set-Note {}
-
-
-Remove-Note {}
-
-
-New-Folder {}
-
-
-Get-Folder {}
-
-
-Set-Folder {}
-	-Sharing
-
-
-Remove-Folder {}
-
-
-Reset-MasterPassword {}
-
-
-Move-Folder?
-
-
-#>
-
-
-
 Function New-Key {
 	<#
 	.SYNOPSIS
@@ -861,8 +854,12 @@ Function ConvertFrom-LPEncryptedString {
 	
 	<#
 	.SYNOPSIS
-	Decrypts Lastpass encoded strings
-		
+	Decrypts Lastpass encrypted strings
+	
+	.DESCRIPTION
+	Decrypts strings encrypted for Lastpass server communication
+	Supports CBC and ECB encryption
+
 	.PARAMETER Value
 	The encrypted Lastpass string to decrypt
 	
@@ -929,7 +926,11 @@ Function ConvertTo-LPEncryptedString {
 	<#
 	.SYNOPSIS
 	Encrypts Lastpass encoded strings
-		
+	
+	.DESCRIPTION
+	Encrypts strings for communication with Lastpass and storage
+	Uses CBC encryption, generating a new random CBC IV.
+
 	.PARAMETER Value
 	The string to encrypt
 	
@@ -1032,6 +1033,17 @@ Function Set-ObjectMetadata {
 	$InputObject | Add-Member @Param
 	
 }
+
+
+
+#FIXME! Remove; for debugging purposes only
+Function Get-Session {
+	Return [PSCustomObject] @{
+		WebSession = $WebSession
+		Session = $Session
+	}
+}
+
 
 
 # Export-ModuleMember -Function @(
