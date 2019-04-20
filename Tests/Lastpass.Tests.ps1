@@ -441,17 +441,7 @@ InModuleScope Lastpass {
 		}
 
 		# Test non-pipeline use case
-		#$Result = Set-Account -ID $Account.ID -PasswordProtect 
-		
-		# $Result = $Account | Set-Account -Username 'NewUsername'
-
-		# $Result = $Account | Set-Account -Password 'ThisIsTheNewPassword'
-
-		# $Result = $Account | Set-Account -Name 'NewName'
-
-		# $Result = $Account | Set-Account -URL 'https://NewURL.com'
-
-		# $Result = $Account | Set-Account -Notes 'These are the new notes'
+		# Set-Account -ID $Account.ID -Name 'NoteName' -PasswordProtect
 		#TODO: Test multiline notes
 
 		$Result = $Account | Set-Account -Username 'NewUsername' -Password 'newPassword'
@@ -549,6 +539,14 @@ InModuleScope Lastpass {
 				$Body.never_autofill
 			} -Exactly -Times 1
 		}
+
+		It 'Returns the updated account' {
+			$Result | Should -BeOfType 'Lastpass.Account'
+			$Result.Username | Should -Be 'NewUsername'
+			$Result.Password | Should -Be 'newPassword'
+		}
+
+		#LastAccessed/LastModified?
 		
 	}
 

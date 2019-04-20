@@ -241,11 +241,12 @@ Function Get-Account {
 		)]
 		[String] $Name
 	)
-	
-	$Param = @{ Type = 'Account' }
-	If($Name){ $Param.Name = $Name }
-	Get-Item @Param
+	PROCESS {
+		If($Name){ $Name | Get-Item -Type Account }
+		Else{ Get-Item -Type Account }
+	}
 }
+
 
 
 Function Set-Account {
@@ -392,6 +393,55 @@ Function Get-Note {
 
 
 
+Function Set-Note {
+	<#
+	.SYNOPSIS
+	Updates a Lastpass note
+	
+	.DESCRIPTION
+	Long description
+	
+	.PARAMETER ParameterName
+	Parameter description
+	
+	.EXAMPLE
+	Set-Note
+	
+	.EXAMPLE
+	Set-Note
+	#>
+	
+	[CmdletBinding()]
+	Param(
+		[Parameter(
+			Mandatory,
+			ValueFromPipelineByPropertyName
+		)]
+		[String] $ID,
+
+		[Parameter(
+			Mandatory,
+			ValueFromPipelineByPropertyName
+		)]
+		[String] $Name,
+		
+		[Parameter(ValueFromPipelineByPropertyName)]
+		[String] $Folder,
+		
+		[Parameter(ValueFromPipelineByPropertyName)]
+		[String] $Content,
+
+		[Parameter(ValueFromPipelineByPropertyName)]
+		[Switch] $PasswordProtect,
+
+		[Parameter(ValueFromPipelineByPropertyName)]
+		[Switch] $Favorite
+	)
+	
+	
+	
+}
+
 <#
 New-Account {}
 
@@ -503,9 +553,11 @@ Function Get-Item {
 							Username		= $_.Username | ConvertFrom-LPEncryptedString 
 							Credential		= [PSCredential]::New(
 												($_.Login.U | ConvertFrom-LPEncryptedString),
-												($_.Login.P | ConvertFrom-LPEncryptedString |
-													ConvertTo-SecureString -AsPlainText -Force)
-												)
+												($_.Login.P | ConvertFrom-LPEncryptedString | ForEach {
+														If($_){ $_ | ConvertTo-SecureString -AsPlainText -Force }
+														Else { [SecureString]::New() }
+													})
+												) 
 							Notes			= $_.Extra | ConvertFrom-LPEncryptedString 
 							Favorite		= !!([Int] $_.Fav)
 							Bookmark		= !!([Int] $_.IsBookmark)
@@ -692,13 +744,13 @@ Function Set-Item {
 	PROCESS {
 		
 		$Body = @{
-			aid			= $ID
-			name		= $Name | ConvertTo-LPEncryptedString
-			grouping	=  $Folder | ConvertTo-LPEncryptedString
-			url			= ([Byte[]][Char[]] $URL | ForEach { "{0:x2}" -f $_ }) -join ''
-			username	= $Username | ConvertTo-LPEncryptedString
-			password	= $Password | ConvertTo-LPEncryptedString
-			extra		= $Notes | ConvertTo-LPEncryptedString
+			aid		 = $ID
+			name	 = $Name | ConvertTo-LPEncryptedString
+			grouping = $Folder | ConvertTo-LPEncryptedString
+			url		 = ([Byte[]][Char[]] $URL | ForEach { "{0:x2}" -f $_ }) -join ''
+			username = $Username | ConvertTo-LPEncryptedString
+			password = $Password | ConvertTo-LPEncryptedString
+			extra	 = $Notes | ConvertTo-LPEncryptedString
 			<#
 			folder = 'user'		#, 'none', or name of default folder
 			#localupdate = 1	# ?
