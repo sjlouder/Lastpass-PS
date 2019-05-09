@@ -4,6 +4,9 @@ InModuleScope Lastpass {
 
 	$ScriptRoot = $PSScriptRoot
 
+	# Make sure no tests actually reach out to the internet
+	Mock Invoke-RestMethod
+
 	Describe Connect-Lastpass {
 
 		# Catch all mock to make sure tests don't reach out to the internet
@@ -364,62 +367,8 @@ InModuleScope Lastpass {
 	}
 
 	Describe Set-Account {
-
-		BeforeAll {
-			$Script:Blob = ([XML] (Get-Content $ScriptRoot/Vault.xml)).Response
-			$Script:Session = [PSCustomObject] @{
-				Key = [Byte[]] @(
-					160,143,117,193,122,157,146,7,23,206,62,167,167,182,117,117,
-					60,118,172,154,146,119,36,238,73,80,241,107,95,3,40,236
-				)
-				Username = 'Username'
-				Iterations = '1'
-			}
-			$Script:Blob.Accounts.Account | ForEach { 
-				$_.SetAttribute('name', (ConvertFrom-LPEncryptedString $_.Name))
-			}
-		}
-
-		$UpdateAPIMockParam = @{
-			CommandName = 'Invoke-RestMethod'
-			ParameterFilter = { $URI -eq 'https://lastpass.com/show_website.php' }
-			MockWith = {
-				#Write-Host 'in mock'
-				[XML] '<xmlresponse>
-					<result 
-						action="added" 
-						aid="5806258868441752428" 
-						urid="0" 
-						msg="accountupdated" 
-						acctname1="" 
-						acctname2="" 
-						acctname3="" 
-						acctname4="" 
-						acctname5="" 
-						acctname6="" 
-						grouping="!lRcc9xINpaUuHfd3Dt2sWZR8obQhQ==|NlyT/4wLJ4Vjfdstgxc2xVOk63eJ1dw61UURMC20vNOP8i/ImUqxiKXZ9mYjCbrmH5l" 
-						count="0" 
-						lasttouch="0000-00-00 00:00:00" 
-						editlink="" 
-						url="68747470733a2f2f676f6f676c652e636f6d" 
-						fav="1" 
-						launchjs="" 
-						deleted="0" 
-						remoteshare="0" 
-						username="!6hlToUTU2WMFvNIfds4rbaFjHv2bg==|TnC0fdsar55/KwXzSH/d5+2MRA==" 
-						localupdate="1" 
-						accts_version="134" 
-						pwprotect="1" 
-						submit_id="" 
-						captcha_id="" 
-						custom_js="">
-					</result>
-				</xmlresponse>'
-			}
-		}
-		Mock @UpdateAPIMockParam
-
-		Mock Sync-Lastpass {}
+		
+		Mock Set-Item
 
 		$Account = [PSCustomObject] @{
 			ID           = '5148901049320353252'
@@ -440,114 +389,21 @@ InModuleScope Lastpass {
 			Password     = 'fdsafdasfda'
 		}
 
-		# Test non-pipeline use case
-		# Set-Account -ID $Account.ID -Name 'NoteName' -PasswordProtect
-		#TODO: Test multiline notes
-
-		$Result = $Account | Set-Account -Username 'NewUsername' -Password 'newPassword'
-
-
-		It 'Calls the edit account API' {
-			Assert-MockCalled Invoke-RestMethod -ParameterFilter {
-				$URI -eq 'https://lastpass.com/show_website.php'
+		$Account | Set-Account
+		It 'Calls Set-Item with the parameters passed to it' {
+			Assert-MockCalled Set-Item -ParameterFilter {
+				$ID			-eq '5148901049320353252' -and
+				$Name		-eq 'sitename' -and
+				$Folder		-eq 'NewFolder1\NewFolder2' -and
+				$URL		-eq 'http://url.com' -and
+				$Username	-eq 'usernamehere2' -and
+				$Password	-eq 'fdsafdasfda' -and
+				$Notes		-eq 'notecontent3' -and
+				!$Favorite	-and
+				!$AutoLogin	-and
+				!$DisableAutofill
 			}
 		}
-		
-		It 'Encrypts the Account Name' {
-			Assert-MockCalled Invoke-RestMethod -ParameterFilter {
-				$URI -eq 'https://lastpass.com/show_website.php' -and
-				($Body.Name | ConvertFrom-LPEncryptedString) -eq $Account.Name
-			}
-		}
-		
-		It 'Encrypts the Username' {
-			Assert-MockCalled Invoke-RestMethod -ParameterFilter {
-				$URI -eq 'https://lastpass.com/show_website.php' -and
-				($Body.UserName | ConvertFrom-LPEncryptedString) -eq 'NewUsername'
-			}
-		}
-		
-		It 'Encrypts the Password' {
-			Assert-MockCalled Invoke-RestMethod -ParameterFilter {
-				$URI -eq 'https://lastpass.com/show_website.php' -and
-				($Body.Password | ConvertFrom-LPEncryptedString) -eq 'newPassword'
-			}
-		}
-		
-		It 'Encrypts the folder' {
-			Assert-MockCalled Invoke-RestMethod -ParameterFilter {
-				$URI -eq 'https://lastpass.com/show_website.php' -and
-				($Body.Grouping | ConvertFrom-LPEncryptedString) -eq $Account.Folder
-			}
-
-		}
-		
-		It 'Encrypts the note content' {
-			Assert-MockCalled Invoke-RestMethod -ParameterFilter {
-				$URI -eq 'https://lastpass.com/show_website.php' -and
-				($Body.Extra | ConvertFrom-LPEncryptedString) -eq $Account.Notes
-			}
-
-		}
-		
-		It 'Encodes the URL' {
-			Assert-MockCalled Invoke-RestMethod -ParameterFilter {
-				
-				# Write-Host $Body.URL
-				$URL = (($Body.URL -split '([a-f0-9]{2})' | ForEach {
-					If($_){ [Char][Convert]::ToByte($_,16) }
-				}) -join '') 
-				# Write-Host $URL
-				$URI -eq 'https://lastpass.com/show_website.php' -and
-				$URL -eq $Account.URL
-			}
-
-		}
-
-		It 'Resyncs accounts' {
-			Assert-MockCalled Sync-Lastpass
-		}
-
-		It 'Includes password protect parameter if specified' {
-			$Account | Set-Account -PasswordProtect
-			Assert-MockCalled Invoke-RestMethod -ParameterFilter {
-				$URI -eq 'https://lastpass.com/show_website.php' -and
-				$Body.PWProtect	
-			} -Exactly -Times 1
-		}
-		
-		It 'Includes favorite parameter if specified' {
-			$Account | Set-Account -Favorite
-			Assert-MockCalled Invoke-RestMethod -ParameterFilter {
-				$URI -eq 'https://lastpass.com/show_website.php' -and
-				$Body.Fav	
-			} -Exactly -Times 1
-		}
-
-		It 'Includes autologin parameter if specified' {
-			$Account | Set-Account -AutoLogin
-			Assert-MockCalled Invoke-RestMethod -ParameterFilter {
-				$URI -eq 'https://lastpass.com/show_website.php' -and
-				$Body.AutoLogin	
-			} -Exactly -Times 1
-		}
-
-		It 'Includes disable autologin parameter if specified' {
-			$Account | Set-Account -DisableAutofill
-			Assert-MockCalled Invoke-RestMethod -ParameterFilter {
-				$URI -eq 'https://lastpass.com/show_website.php' -and
-				$Body.never_autofill
-			} -Exactly -Times 1
-		}
-
-		It 'Returns the updated account' {
-			$Result | Should -BeOfType 'Lastpass.Account'
-			$Result.Username | Should -Be 'NewUsername'
-			$Result.Password | Should -Be 'newPassword'
-		}
-
-		#LastAccessed/LastModified?
-		
 	}
 
 	Describe Get-Note {
@@ -617,6 +473,244 @@ InModuleScope Lastpass {
 		It 'Updates the LastAccessed time' {
 			$Result.LastAccessed.DateTime | Should -Be $Now.DateTime
 		}
+	}
+
+	Describe Set-Note {
+
+		Mock Set-Item
+
+		$Note = [PSCustomObject] @{
+			ID           = '5148901049320353252'
+			Name         = 'sitename'
+			Content      = 'notecontent3'
+			Folder       = 'NewFolder1\NewFolder2'
+			Favorite     = $False
+			LastModified = [DateTime] '4/3/19 4:58:05 AM'
+			LastAccessed = [DateTime] '4/4/19 1:42:48 AM'
+		}
+
+		$Note | Set-Note
+
+		It 'Calls Set-Item with the SecureNote parameter' {
+			Assert-MockCalled Set-Item -ParameterFilter { $SecureNote }
+		}
+
+		
+
+	}
+
+	Describe Get-Item {
+		
+		BeforeAll {
+			$Script:Blob = ([XML] (Get-Content $ScriptRoot/Vault.xml)).Response
+			$Script:Session = [PSCustomObject] @{
+				Key = [Byte[]] @(
+					160,143,117,193,122,157,146,7,23,206,62,167,167,182,117,117,
+					60,118,172,154,146,119,36,238,73,80,241,107,95,3,40,236
+				)
+				Username = 'Username'
+				Iterations = '1'
+			}
+			$Script:Blob.Accounts.Account | ForEach { 
+				$_.SetAttribute('name', (ConvertFrom-LPEncryptedString $_.Name))
+			}
+		}
+
+		Get-Item
+		Get-Item -Type 'Account'
+		Get-Item 'Account Name'
+		'AccountName' | Get-Item
+
+		Get-Item -Type Note
+		Get-Item 'Note'
+
+		
+	}
+
+	Describe Set-Item {
+		
+		BeforeAll {
+			$Script:Blob = ([XML] (Get-Content $ScriptRoot/Vault.xml)).Response
+			$Script:Session = [PSCustomObject] @{
+				Key = [Byte[]] @(
+					160,143,117,193,122,157,146,7,23,206,62,167,167,182,117,117,
+					60,118,172,154,146,119,36,238,73,80,241,107,95,3,40,236
+				)
+				Username = 'Username'
+				Iterations = '1'
+			}
+			$Script:Blob.Accounts.Account | ForEach { 
+				$_.SetAttribute('name', (ConvertFrom-LPEncryptedString $_.Name))
+			}
+		}
+
+		$UpdateAPIMockParam = @{
+			CommandName = 'Invoke-RestMethod'
+			ParameterFilter = { $URI -eq 'https://lastpass.com/show_website.php' }
+			MockWith = {
+				[XML] '<xmlresponse>
+					<result 
+						action="added" 
+						aid="5806258868441752428" 
+						urid="0" 
+						msg="accountupdated" 
+						acctname1="" 
+						acctname2="" 
+						acctname3="" 
+						acctname4="" 
+						acctname5="" 
+						acctname6="" 
+						grouping="!lRcc9xINpaUuHfd3Dt2sWZR8obQhQ==|NlyT/4wLJ4Vjfdstgxc2xVOk63eJ1dw61UURMC20vNOP8i/ImUqxiKXZ9mYjCbrmH5l" 
+						count="0" 
+						lasttouch="0000-00-00 00:00:00" 
+						editlink="" 
+						url="68747470733a2f2f676f6f676c652e636f6d" 
+						fav="1" 
+						launchjs="" 
+						deleted="0" 
+						remoteshare="0" 
+						username="!6hlToUTU2WMFvNIfds4rbaFjHv2bg==|TnC0fdsar55/KwXzSH/d5+2MRA==" 
+						localupdate="1" 
+						accts_version="134" 
+						pwprotect="1" 
+						submit_id="" 
+						captcha_id="" 
+						custom_js="">
+					</result>
+				</xmlresponse>'
+			}
+		}
+		Mock @UpdateAPIMockParam
+
+		Mock Sync-Lastpass {}
+
+		$Account = [PSCustomObject] @{
+			ID           = '5148901049320353252'
+			Name         = 'sitename'
+			URL          = 'http://url.com'
+			Folder       = 'NewFolder1\NewFolder2'
+			Username     = 'usernamehere2'
+			Credential   = [PSCredential]::New(
+								'usernamehere2',
+								(ConvertTo-SecureString -A -F 'fdsafdasfda')
+							)
+			Notes        = 'notecontent3'
+			Favorite     = $False
+			LastModified = [DateTime] '4/3/19 4:58:05 AM'
+			LastAccessed = [DateTime] '4/4/19 1:42:48 AM'
+			LaunchCount  = 0
+			Bookmark     = $False
+			Password     = 'fdsafdasfda'
+		}
+
+		# Test non-pipeline use case
+		# Set-Account -ID $Account.ID -Name 'NoteName' -PasswordProtect
+		#TODO: Test multiline notes
+
+		$Result = $Account | Set-Item -Username 'NewUsername' -Password 'newPassword'
+
+
+		It 'Calls the edit account API' {
+			Assert-MockCalled Invoke-RestMethod
+		}
+		
+		It 'Encrypts the Account Name' {
+			Assert-MockCalled Invoke-RestMethod -ParameterFilter {
+				($Body.Name | ConvertFrom-LPEncryptedString) -eq $Account.Name
+			}
+		}
+		
+		It 'Encrypts the Username' {
+			Assert-MockCalled Invoke-RestMethod -ParameterFilter {
+				($Body.UserName | ConvertFrom-LPEncryptedString) -eq 'NewUsername'
+			}
+		}
+		
+		It 'Encrypts the Password' {
+			Assert-MockCalled Invoke-RestMethod -ParameterFilter {
+				($Body.Password | ConvertFrom-LPEncryptedString) -eq 'newPassword'
+			}
+		}
+		
+		It 'Encrypts the folder' {
+			Assert-MockCalled Invoke-RestMethod -ParameterFilter {
+				($Body.Grouping | ConvertFrom-LPEncryptedString) -eq $Account.Folder
+			}
+
+		}
+		
+		It 'Encrypts the note content' {
+			Assert-MockCalled Invoke-RestMethod -ParameterFilter {
+				($Body.Extra | ConvertFrom-LPEncryptedString) -eq $Account.Notes
+			}
+
+		}
+		
+		It 'Encodes the URL' {
+			Assert-MockCalled Invoke-RestMethod -ParameterFilter {
+				$Body.URL -eq '687474703a2f2f75726c2e636f6d'
+			}
+		}
+
+		It 'Resyncs accounts' {
+			Assert-MockCalled Sync-Lastpass
+		}
+
+		It 'Includes password protect parameter if specified' {
+			$Account | Set-Account -PasswordProtect
+			Assert-MockCalled Invoke-RestMethod -ParameterFilter {
+				$Body.PWProtect	
+			} -Exactly -Times 1
+		}
+		
+		It 'Includes favorite parameter if specified' {
+			$Account | Set-Account -Favorite
+			Assert-MockCalled Invoke-RestMethod -ParameterFilter {
+				$Body.Fav	
+			} -Exactly -Times 1
+		}
+
+		It 'Includes autologin parameter if specified' {
+			$Account | Set-Account -AutoLogin
+			Assert-MockCalled Invoke-RestMethod -ParameterFilter {
+				$Body.AutoLogin	
+			} -Exactly -Times 1
+		}
+
+		It 'Includes disable autologin parameter if specified' {
+			$Account | Set-Account -DisableAutofill
+			Assert-MockCalled Invoke-RestMethod -ParameterFilter {
+				$Body.never_autofill
+			} -Exactly -Times 1
+		}
+
+		It 'Returns the updated account' {
+			$Result | Should -BeOfType 'Lastpass.Account'
+			$Result.Username | Should -Be 'NewUsername'
+			$Result.Password | Should -Be 'newPassword'
+		}
+
+		#LastAccessed/LastModified?
+
+		$Note = [PSCustomObject] @{
+			ID           = '5148901049320353252'
+			Name         = 'sitename'
+			Content      = 'notecontent3'
+			Folder       = 'NewFolder1\NewFolder2'
+			Favorite     = $False
+			LastModified = [DateTime] '4/3/19 4:58:05 AM'
+			LastAccessed = [DateTime] '4/4/19 1:42:48 AM'
+		}
+
+		$Note | Set-Item -SecureNote
+
+		It 'Sets the URL to "http://sn"' {
+			Assert-MockCalled Invoke-RestMethod -ParameterFilter {
+				$Body.URL -eq '687474703a2f2f736e'
+			}
+		}
+
+
 	}
 
 	Describe ConvertFrom-LPEncryptedString {

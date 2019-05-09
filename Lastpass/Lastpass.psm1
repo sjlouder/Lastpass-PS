@@ -438,7 +438,7 @@ Function Set-Note {
 		[Switch] $Favorite
 	)
 	
-	
+	Set-Item -SecureNote @PSBoundParameters
 	
 }
 
@@ -733,7 +733,7 @@ Function Set-Item {
 			WebSession	= $Script:WebSession
 		}
 
-		$BaseBody = @{
+		$BodyBase = @{
 			extjs	= 1
 			token	= $Script:Session.Token
 			method	= 'cli'
