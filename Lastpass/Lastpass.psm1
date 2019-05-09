@@ -396,21 +396,44 @@ Function Get-Note {
 Function Set-Note {
 	<#
 	.SYNOPSIS
-	Updates a Lastpass note
+	Updates a Lastpass Note
 	
 	.DESCRIPTION
-	Long description
+	Sets the properties of a Lastpass note.
+	Does a full overwrite (ie. any parameters not included will be
+	deleted if they existed as part of the note previously) 
 	
-	.PARAMETER ParameterName
-	Parameter description
+	.PARAMETER ID
+	The ID of the note
+
+	.PARAMETER Name
+	The name of the note
+
+	.PARAMETER Folder
+	The directory path that contains the note
+
+	.PARAMETER Content
+	The content of the note
+
+	.PARAMETER PasswordProtect
+	Whether to require a password reprompt to access the note
+	
+	.PARAMETER Favorite
+	Whether the note is marked as a favorite
+
+	.EXAMPLE
+	Set-Note -ID 10248 -Name 'NewName'
+	Sets the note with ID 10248 to have the name 'NewName'.
+	Note that any note content, folder, or other properties of the note will be overwritten.
 	
 	.EXAMPLE
-	Set-Note
-	
-	.EXAMPLE
-	Set-Note
+	Get-Note 'SecretCrush' | Set-Note -PasswordProtect
+	Gets the note named 'SecretCrush', and passes it to Set-Note to update the note to require
+	a password to access. Passing in a note object will include all of the existing properties,
+	so Set-Note will effectively perform an update, only overwriting the parameters explicitly
+	passed in.	
 	#>
-	
+
 	[CmdletBinding()]
 	Param(
 		[Parameter(
