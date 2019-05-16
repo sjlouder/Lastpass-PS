@@ -695,7 +695,10 @@ Function Set-Item {
 		)]
 		[String] $ID,
 
-		[Parameter(ValueFromPipelineByPropertyName)]
+		[Parameter(
+			Mandatory,
+			ValueFromPipelineByPropertyName
+		)]
 		[String] $Name,
 
 		[Parameter(
@@ -765,14 +768,13 @@ Function Set-Item {
 	}
 
 	PROCESS {
+		If($SecureNote){ $URL = 'http://sn' }
 		
 		$Body = @{
 			aid		 = $ID
 			name	 = $Name | ConvertTo-LPEncryptedString
 			grouping = $Folder | ConvertTo-LPEncryptedString
 			url		 = ([Byte[]][Char[]] $URL | ForEach { "{0:x2}" -f $_ }) -join ''
-			username = $Username | ConvertTo-LPEncryptedString
-			password = $Password | ConvertTo-LPEncryptedString
 			extra	 = $Notes | ConvertTo-LPEncryptedString
 			<#
 			folder = 'user'		#, 'none', or name of default folder
@@ -784,10 +786,17 @@ Function Set-Item {
 			#iid = ''			# ?
 			#>
 		}
+
+		If(!$SecureNote){
+			$Body.username = $Username | ConvertTo-LPEncryptedString
+			$Body.password = $Password | ConvertTo-LPEncryptedString
+			
+			If($AutoLogin){ $Body.autologin = 'on' }
+			If($DisableAutofill){ $Body.never_autofill = 'on' }
+		}
+
 		If($PasswordProtect){ $Body.pwprotect = 'on' }
 		If($Favorite){ $Body.fav = 'on' }
-		If($AutoLogin){ $Body.autologin = 'on' }
-		If($DisableAutofill){ $Body.never_autofill = 'on' }
 		
 		"Request Parameters:`n{0}" -f ($Body | Out-String) | Write-Debug
 		$Response = Invoke-RestMethod @Param -Body ($BodyBase + $Body)
