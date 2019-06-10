@@ -108,9 +108,64 @@ Function Connect-Lastpass {
 
 	#TODO: Change this to While($Response.Error)?
 	If($Response.Error){
-		'Error received:`n{0}' -f $Response.Error | Write-Debug
-				Switch -Regex ($Response.Error.Cause){
-			'googleauthrequired|otprequired' {
+		"Error received:`n{0}" -f $Response.Error.OuterXML | Write-Debug
+		Switch -Regex ($Response.Error.Cause){
+			OutOfBandRequired {
+				#TODO
+				#$Response.Error.OutOfBandType
+				#Return $Response
+
+				$Type = $Response.Error.OutOfBandName
+				$Capabilities = $Response.Error.Capabilities -split ','
+				If(!$Type -or !$Capabilities){ Throw 'Could not determine out-of-band type' }
+				
+				$Prompt = "Complete multifactor authentication through $Type"
+				If($Capabilities -contains 'Passcode' -and !$OneTimePassword){
+					$Prompt += ' or enter a one time passcode: '
+					Write-Host -NoNewLine $Prompt
+					$Param.Body.outofbandrequest = 1
+					Do {
+						$Response = (Invoke-RestMethod @Param).Response
+						If($Response.Error.Cause -eq 'OutOfBandRequired'){
+							$Param.Body.outofbandretry = 1
+							$Param.Body.outofbandretryid = $Response.Error.RetryID
+							
+							While([Console]::KeyAvailable){
+								$Key = [Console]::ReadKey($True)
+								If($Key.Key -eq 'Enter' ){
+									$Param.Body.outofbandrequest = 0
+									$Param.Body.outofbandretry = 0
+									$Param.Body.outofbandretryid = ''
+									Break
+								}
+								$OneTimePassword += $Key.KeyChar
+							}
+							
+						}
+						ElseIf($Response.Error.Cause -eq 'MultiFactorResponseFailed'){
+							Throw $Response.Error.Message
+						}
+					}Until($Response.OK)
+				}
+				ElseIf($Capabilities -notcontains 'Passcode'){
+					Write-Host -NoNewLine $Prompt
+					$Param.Body.outofbandrequest = 1
+					Do {
+						$Response = (Invoke-RestMethod @Param).Response
+						If($Response.Error.Cause -eq 'OutOfBandRequired'){
+							$Param.Body.outofbandretry = 1
+							$Param.Body.outofbandretryid = $Response.Error.RetryID
+						}
+						ElseIf($Response.Error.Cause -eq 'MultiFactorResponseFailed'){
+							Throw $Response.Error.Message
+						}
+					}Until($Response.OK)
+
+				}
+				If($Response.OK){ 'OK';Break }
+				# Intentional fallthrough if OOB is supplied as a OTP
+			}
+			'GoogleAuthRequired|OTPRequired|OutOfBandRequired' {
 				If(!$OneTimePassword){
 					$OneTimePassword = Read-Host 'Enter multifactor authentication code'
 				}
@@ -121,12 +176,8 @@ Function Connect-Lastpass {
 				#'multifactorresponsefailed'
 				Break
 			}
-			'outofbandrequired' {
-				#TODO
-				#$Response.Error.OutOfBandType
-				Break
-			}
 			#'verifydevice' -> Default: Throw message
+			# Parse custombutton and customaction attributes
 			Default { Throw $Response.Error.Message }
 		}
 	}
@@ -185,7 +236,7 @@ Function Sync-Lastpass {
 	
 	[CmdletBinding()]
 	Param()
-
+	If(!$Session){ Throw 'Not logged in. Use Connect-Lastpass to Log in' }
 	Write-Verbose 'Syncing Lastpass information'
 	
 	$Param = @{
@@ -475,9 +526,6 @@ Remove-Account {}
 New-Note {}
 
 
-Set-Note {}
-
-
 Remove-Note {}
 
 
@@ -493,7 +541,7 @@ Set-Folder {}
 
 Remove-Folder {}
 
-
+	
 Reset-MasterPassword {}
 
 
@@ -810,7 +858,12 @@ Function Set-Item {
 
 				Break
 			}
-			Default { Throw "Failed to update $Name" }
+			Default { 
+				Throw ("Failed to update {0}.`n{1}" -f @(
+					$Name
+					$Response.OuterXML)
+				)
+			}
 		}
 	}
 
@@ -1125,6 +1178,7 @@ Function Get-Session {
 	Return [PSCustomObject] @{
 		WebSession = $WebSession
 		Session = $Session
+		Blob = $Blob
 	}
 }
 

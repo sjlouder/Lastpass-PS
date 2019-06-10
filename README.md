@@ -34,31 +34,36 @@ $GmailAccount.Password
 
 STATUS AND FEATURES
 ---
-This project is in early stages and currently only supports logging in, getting the account data, and decrypting fields. Current focus is on developing the specs (BDD Pester tests).
+This project is in early stages and currently only supports logging in, getting the account data, and decrypting fields. Basic account and note updating works, but is not heavily tested and is not production ready.
 
 Currently supported:
 * Login
 	* App OTP MFA
 * Get and decrypt accounts and notes
-	* Supports password proptection
+	* Supports password protection
+* Update accounts and notes
+	* WARNING: Not fully tested
+	* WARNING: Shared items not currently supported
 
 Planned:
 * Accounts Support
-	* Create/update/delete
+	* Create/delete
 	* Move (folders)
 * Notes support
-	* Create/update/delete
+	* Create/delete
 	* Move
 	* Parse special types
 * Other Login methods
+	* Duo
 	* Yubikey
 	* Sesame
-	* Duo
 * Folders support
 	* Create/read/update/delete
 	* Move
 	* Un/share
 	* Manage sharing
+* Attachment support
+	* Create/read/update/delete
 * Password generation
 	* Specific length, specify dis/allowed characters
 * Import/export
@@ -70,6 +75,11 @@ Planned:
 Ideas:
 * Create custom note types
 * Background Syncing
+* Admin:
+	* User management
+	* Usergroup management
+	* Sharing restrictions
+	* MFA settings
 
 
 INSTALLING
