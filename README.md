@@ -30,35 +30,49 @@ $GmailAccount.Credential
 # Or, get username and password directly
 $GmailAccount.Username
 $GmailAccount.Password
+
+# Update account information
+$GmailAccount | Set-Account -PasswordProtect
+
 ```
+For more examples, check Tests/Lastpass.Tests.ps1.
+
 
 STATUS AND FEATURES
 ---
-This project is in early stages and currently only supports logging in, getting the account data, and decrypting fields. Current focus is on developing the specs (BDD Pester tests).
+This project is in early stages and is not production ready. Logging in, getting the account data, and decrypting non shared fields has been implemented. Basic account and note updating has been implemented, but is not heavily tested.
+**Create backup copies of your data before using this project to make any modifications.**
 
 Currently supported:
 * Login
 	* App OTP MFA
 * Get and decrypt accounts and notes
-	* Supports password proptection
+	* Supports password protection
+* Update accounts and notes
+	* **WARNING**: Not fully tested
+	* **WARNING**: Shared items not currently supported
 
 Planned:
 * Accounts Support
-	* Create/update/delete
+	* Create/delete
 	* Move (folders)
+	* Sharing
 * Notes support
-	* Create/update/delete
+	* Create/delete
 	* Move
+	* Sharing
 	* Parse special types
 * Other Login methods
+	* Duo
 	* Yubikey
 	* Sesame
-	* Duo
 * Folders support
 	* Create/read/update/delete
 	* Move
 	* Un/share
 	* Manage sharing
+* Attachment support
+	* Create/read/update/delete
 * Password generation
 	* Specific length, specify dis/allowed characters
 * Import/export
@@ -70,11 +84,16 @@ Planned:
 Ideas:
 * Create custom note types
 * Background Syncing
+* Admin:
+	* User management
+	* Usergroup management
+	* Sharing restrictions
+	* MFA settings
 
 
 INSTALLING
 ---
-Currently: download; Import-Module /Path/To/Lastpass-PS
+Currently: download; Import-Module /Path/To/Lastpass-PS/Lastpass
 
 Eventually: Install-Module Lastpass #From Powershell Gallery
 

@@ -241,11 +241,12 @@ Function Get-Account {
 		)]
 		[String] $Name
 	)
-	
-	$Param = @{ Type = 'Account' }
-	If($Name){ $Param.Name = $Name }
-	Get-Item @Param
+	PROCESS {
+		If($Name){ $Name | Get-Item -Type Account }
+		Else{ Get-Item -Type Account }
+	}
 }
+
 
 
 Function Set-Account {
@@ -392,6 +393,78 @@ Function Get-Note {
 
 
 
+Function Set-Note {
+	<#
+	.SYNOPSIS
+	Updates a Lastpass Note
+	
+	.DESCRIPTION
+	Sets the properties of a Lastpass note.
+	Does a full overwrite (ie. any parameters not included will be
+	deleted if they existed as part of the note previously) 
+	
+	.PARAMETER ID
+	The ID of the note
+
+	.PARAMETER Name
+	The name of the note
+
+	.PARAMETER Folder
+	The directory path that contains the note
+
+	.PARAMETER Content
+	The content of the note
+
+	.PARAMETER PasswordProtect
+	Whether to require a password reprompt to access the note
+	
+	.PARAMETER Favorite
+	Whether the note is marked as a favorite
+
+	.EXAMPLE
+	Set-Note -ID 10248 -Name 'NewName'
+	Sets the note with ID 10248 to have the name 'NewName'.
+	Note that any note content, folder, or other properties of the note will be overwritten.
+	
+	.EXAMPLE
+	Get-Note 'SecretCrush' | Set-Note -PasswordProtect
+	Gets the note named 'SecretCrush', and passes it to Set-Note to update the note to require
+	a password to access. Passing in a note object will include all of the existing properties,
+	so Set-Note will effectively perform an update, only overwriting the parameters explicitly
+	passed in.	
+	#>
+
+	[CmdletBinding()]
+	Param(
+		[Parameter(
+			Mandatory,
+			ValueFromPipelineByPropertyName
+		)]
+		[String] $ID,
+
+		[Parameter(
+			Mandatory,
+			ValueFromPipelineByPropertyName
+		)]
+		[String] $Name,
+		
+		[Parameter(ValueFromPipelineByPropertyName)]
+		[String] $Folder,
+		
+		[Parameter(ValueFromPipelineByPropertyName)]
+		[String] $Content,
+
+		[Parameter(ValueFromPipelineByPropertyName)]
+		[Switch] $PasswordProtect,
+
+		[Parameter(ValueFromPipelineByPropertyName)]
+		[Switch] $Favorite
+	)
+	
+	Set-Item -SecureNote @PSBoundParameters
+	
+}
+
 <#
 New-Account {}
 
@@ -503,9 +576,11 @@ Function Get-Item {
 							Username		= $_.Username | ConvertFrom-LPEncryptedString 
 							Credential		= [PSCredential]::New(
 												($_.Login.U | ConvertFrom-LPEncryptedString),
-												($_.Login.P | ConvertFrom-LPEncryptedString |
-													ConvertTo-SecureString -AsPlainText -Force)
-												)
+												($_.Login.P | ConvertFrom-LPEncryptedString | ForEach {
+														If($_){ $_ | ConvertTo-SecureString -AsPlainText -Force }
+														Else { [SecureString]::New() }
+													})
+												) 
 							Notes			= $_.Extra | ConvertFrom-LPEncryptedString 
 							Favorite		= !!([Int] $_.Fav)
 							Bookmark		= !!([Int] $_.IsBookmark)
@@ -620,7 +695,10 @@ Function Set-Item {
 		)]
 		[String] $ID,
 
-		[Parameter(ValueFromPipelineByPropertyName)]
+		[Parameter(
+			Mandatory,
+			ValueFromPipelineByPropertyName
+		)]
 		[String] $Name,
 
 		[Parameter(
@@ -681,7 +759,7 @@ Function Set-Item {
 			WebSession	= $Script:WebSession
 		}
 
-		$BaseBody = @{
+		$BodyBase = @{
 			extjs	= 1
 			token	= $Script:Session.Token
 			method	= 'cli'
@@ -690,15 +768,14 @@ Function Set-Item {
 	}
 
 	PROCESS {
+		If($SecureNote){ $URL = 'http://sn' }
 		
 		$Body = @{
-			aid			= $ID
-			name		= $Name | ConvertTo-LPEncryptedString
-			grouping	=  $Folder | ConvertTo-LPEncryptedString
-			url			= ([Byte[]][Char[]] $URL | ForEach { "{0:x2}" -f $_ }) -join ''
-			username	= $Username | ConvertTo-LPEncryptedString
-			password	= $Password | ConvertTo-LPEncryptedString
-			extra		= $Notes | ConvertTo-LPEncryptedString
+			aid		 = $ID
+			name	 = $Name | ConvertTo-LPEncryptedString
+			grouping = $Folder | ConvertTo-LPEncryptedString
+			url		 = ([Byte[]][Char[]] $URL | ForEach { "{0:x2}" -f $_ }) -join ''
+			extra	 = $Notes | ConvertTo-LPEncryptedString
 			<#
 			folder = 'user'		#, 'none', or name of default folder
 			#localupdate = 1	# ?
@@ -709,10 +786,17 @@ Function Set-Item {
 			#iid = ''			# ?
 			#>
 		}
+
+		If(!$SecureNote){
+			$Body.username = $Username | ConvertTo-LPEncryptedString
+			$Body.password = $Password | ConvertTo-LPEncryptedString
+			
+			If($AutoLogin){ $Body.autologin = 'on' }
+			If($DisableAutofill){ $Body.never_autofill = 'on' }
+		}
+
 		If($PasswordProtect){ $Body.pwprotect = 'on' }
 		If($Favorite){ $Body.fav = 'on' }
-		If($AutoLogin){ $Body.autologin = 'on' }
-		If($DisableAutofill){ $Body.never_autofill = 'on' }
 		
 		"Request Parameters:`n{0}" -f ($Body | Out-String) | Write-Debug
 		$Response = Invoke-RestMethod @Param -Body ($BodyBase + $Body)
