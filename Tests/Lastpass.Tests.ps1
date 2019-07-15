@@ -183,11 +183,147 @@ InModuleScope Lastpass {
 
 
 		Context 'Out of Band MFA required' {
-			It 'Prompts user to complete OOB authentication' {}
+			Mock Write-Host -ParameterFilter {$NoNewLine}
 
-			It 'Polls the OOB endpoint to check whether authentication has succeeded' {}
+			$OOBEnabledMockParam = @{
+				CommandName = 'Invoke-RestMethod'
+				ParameterFilter = { 
+					$URI -eq 'https://lastpass.com/login.php' -and
+					!$Body.outofbandrequest
+				}
+			}
+			Mock @OOBEnabledMockParam {
+				Return [PSCustomObject] @{
+					Response = [PSCustomObject] @{
+						Error = [PSCustomObject] @{
+							Cause = 'OutOfBandRequired'
+							OutOfBandName = 'Duo Security'
+							Capabilities = 'None'
+						}
+					}
+				}
+			}
+
+			$OOBPollMockParam = @{
+				CommandName = 'Invoke-RestMethod'
+				ParameterFilter = { 
+					$URI -eq 'https://lastpass.com/login.php' -and
+					$Body.outofbandrequest
+				}
+			}
+			Mock @OOBPollMockParam {
+				$Error = @{
+					Cause = 'OutOfBandRequired'
+					OutOfBandName = 'Duo Security'
+				}
+				If($Body.outofbandretryid -eq $Null){
+					$Error.RetryID = 0
+				}
+				ElseIf($Body.outofbandretryid -eq 3){
+					Return [PSCustomObject] @{
+						Response = [PSCustomObject] @{
+							OK = [PSCustomObject] @{
+								UID				= '123456789'
+								SessionID		= 'SessionIDHere1232'
+								Token			= 'TokenHere12332o432i432'
+								PrivateKeyEnc	= 'TestPrivateKey0-324irfk49-'
+								Iterations		= '100100'
+								Username		= 'Username'
+							}
+						}
+					}
+				}
+				Else{
+					$Error.RetryID = $Body.outofbandretryid + 1
+				}
+				Return [PSCustomObject] @{
+					Response = [PSCustomObject] @{
+						Error = [PSCustomObject] $Error
+					}
+				}
+
+			}
+
+			Connect-Lastpass -Credential $Credential | Out-Null
+
+			It 'Prompts user to complete OOB authentication' {
+				Assert-MockCalled Write-Host -ParameterFilter { 
+					$Object -eq 'Complete multifactor authentication through Duo Security'
+				}
+			}
+
+			It 'Polls the OOB endpoint to check whether authentication has succeeded' {
+				Assert-MockCalled @OOBPollMockParam -Times 5
+			}
 
 			It 'Proceeds once the OOB authentication has completed' {}
+
+			Context 'OTP supported' {
+
+				Mock @OOBEnabledMockParam {
+					Return [PSCustomObject] @{
+						Response = [PSCustomObject] @{
+							Error = [PSCustomObject] @{
+								Cause = 'OutOfBandRequired'
+								OutOfBandName = 'Duo Security'
+								Capabilities = 'Passcode'
+							}
+						}
+					}
+				}
+
+				$OTPLoginMockParam = @{
+					CommandName = 'Invoke-RestMethod'
+					ParameterFilter = { 
+						$URI -eq 'https://lastpass.com/login.php' -and 
+						$Body.OTP
+					}
+				}
+				Mock @OTPLoginMockParam {
+					Return [PSCustomObject] @{
+						Response = [PSCustomObject] @{
+							OK = [PSCustomObject] @{
+								UID				= '123456789'
+								SessionID		= 'uu4fdsu9fsDFad9WufdFEsaUUFD'
+								Token			= 'MTU0ODA0OTkxNi45MzMxLbu/wlKm16H07pJsq3q4UACWuqmr0nT+8msPiVgK4/Jv'
+								PrivateKeyEnc	= 'TestPrivateKey'
+							}
+						}
+					}
+				}
+
+				Connect-Lastpass -Credential $Credential | Out-Null
+
+				It 'prompts to complete OOB authentication or enter one time password' {
+					Assert-MockCalled Write-Host -ParameterFilter { 
+						$NoNewLine -and
+						$Object -eq ('Complete multifactor authentication through ' + 
+									'Duo Security or enter a one time passcode: ')
+					}
+				}
+
+				It 'Polls the OOB endpoint to check whether authentication has succeeded' {
+					Assert-MockCalled @OOBPollMockParam
+				}
+
+				# FIXME: Console input is read using .net class calls, so can't mock it
+				It 'Reads the console for OTP input' {}
+				It 'Proceeds once a valid pin is entered' {}
+
+
+				It 'Uses the $OneTimePassword parameter if supplied' {
+					Connect-Lastpass -Credential $Credential -OneTimePassword '12312312' | Out-Null
+
+					Assert-MockCalled Invoke-RestMethod -ParameterFilter { 
+						$URI -eq 'https://lastpass.com/login.php' -and 
+						$Body.OTP -eq '12312312'
+					}
+				
+
+					Assert-MockCalled @OOBEnabledMockParam
+				}
+
+			}
 
 		}
 

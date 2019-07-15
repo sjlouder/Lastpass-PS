@@ -76,7 +76,7 @@ Function Connect-Lastpass {
 
 		[String] $OneTimePassword
 	)
-	
+
 	$Param = @{
 		URI = 'https://lastpass.com/iterations.php'
 		Body = @{email = $Credential.Username.ToLower()}
@@ -114,7 +114,6 @@ Function Connect-Lastpass {
 				#TODO
 				#$Response.Error.OutOfBandType
 				#Return $Response
-
 				$Type = $Response.Error.OutOfBandName
 				$Capabilities = $Response.Error.Capabilities -split ','
 				If(!$Type -or !$Capabilities){ Throw 'Could not determine out-of-band type' }
@@ -131,20 +130,26 @@ Function Connect-Lastpass {
 							$Param.Body.outofbandretryid = $Response.Error.RetryID
 							
 							While([Console]::KeyAvailable){
-								$Key = [Console]::ReadKey($True)
-								If($Key.Key -eq 'Enter' ){
-									$Param.Body.outofbandrequest = 0
-									$Param.Body.outofbandretry = 0
-									$Param.Body.outofbandretryid = ''
+								$Input = [Console]::ReadKey($True)
+								Write-Debug ("Key: {0} {1}" -f $Input.Key, ($Input.Key -eq 'Enter'))
+								If( $Input.Key -eq 'Enter' ){
+									Write-Debug $OneTimePassword
+									$Param2 = $Param.Clone()
+									$Param2.Body.outofbandrequest = 0
+									$Param2.Body.outofbandretry = 0
+									$Param2.Body.outofbandretryid = ''
+									$Param2.Body.otp = $OneTimePassword
+									$Param2.Body | Out-String | Write-Debug
+									$Response = (Invoke-RestMethod @Param2).Response
 									Break
 								}
-								$OneTimePassword += $Key.KeyChar
+								$OneTimePassword += $Input.KeyChar
 							}
-							
 						}
 						ElseIf($Response.Error.Cause -eq 'MultiFactorResponseFailed'){
 							Throw $Response.Error.Message
 						}
+						Start-Sleep 1
 					}Until($Response.OK)
 				}
 				ElseIf($Capabilities -notcontains 'Passcode'){
@@ -159,11 +164,10 @@ Function Connect-Lastpass {
 						ElseIf($Response.Error.Cause -eq 'MultiFactorResponseFailed'){
 							Throw $Response.Error.Message
 						}
+						Start-Sleep 1
 					}Until($Response.OK)
 
 				}
-				If($Response.OK){ 'OK';Break }
-				# Intentional fallthrough if OOB is supplied as a OTP
 			}
 			'GoogleAuthRequired|OTPRequired|OutOfBandRequired' {
 				If(!$OneTimePassword){
@@ -174,7 +178,6 @@ Function Connect-Lastpass {
 
 				# TODO: Error checking
 				#'multifactorresponsefailed'
-				Break
 			}
 			#'verifydevice' -> Default: Throw message
 			# Parse custombutton and customaction attributes
@@ -182,28 +185,28 @@ Function Connect-Lastpass {
 		}
 	}
 
-	If($Response.OK){
-		$Script:Session = [PSCustomObject] @{
-			UID					= $Response.OK.UID
-			SessionID			= $Response.OK.SessionID
-			Token				= $Response.OK.Token
-			EncryptedPrivateKey = $Response.OK.PrivateKeyEnc
-			Iterations			= $Response.OK.Iterations
-			Username			= $Response.OK.LPUsername
-			Key					= $Key
-		}
-
-		$Cookie = [System.Net.Cookie]::New(
-			'PHPSESSID',
-			[System.Web.HttpUtility]::UrlEncode($Script:Session.SessionID),
-			'/',
-			'lastpass.com'
-		)
-
-		$Script:WebSession = [Microsoft.Powershell.Commands.WebRequestSession]::New()
-		$Script:WebSession.Cookies.Add($Cookie)
-		If(!$?){ Throw 'Unable to create session' }
+	If(!$Response.OK){ Throw 'Login unsuccessful' }
+	
+	$Script:Session = [PSCustomObject] @{
+		UID					= $Response.OK.UID
+		SessionID			= $Response.OK.SessionID
+		Token				= $Response.OK.Token
+		EncryptedPrivateKey = $Response.OK.PrivateKeyEnc
+		Iterations			= $Response.OK.Iterations
+		Username			= $Response.OK.LPUsername
+		Key					= $Key
 	}
+
+	$Cookie = [System.Net.Cookie]::New(
+		'PHPSESSID',
+		[System.Web.HttpUtility]::UrlEncode($Script:Session.SessionID),
+		'/',
+		'lastpass.com'
+	)
+
+	$Script:WebSession = [Microsoft.Powershell.Commands.WebRequestSession]::New()
+	$Script:WebSession.Cookies.Add($Cookie)
+	If(!$?){ Throw 'Unable to create session' }
 
 	Sync-Lastpass | Out-Null
 
