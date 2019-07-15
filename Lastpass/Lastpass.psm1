@@ -172,6 +172,10 @@ Function Connect-Lastpass {
 			}
 			'GoogleAuthRequired|OTPRequired|OutOfBandRequired' {
 				If(!$OneTimePassword){
+					If(!$Interactive){
+						Throw ('Powershell is running in noninteractive mode. ' + 
+							'Enter the one time password via the -OneTimePassword parameter.')
+					}
 					$OneTimePassword = Read-Host 'Enter multifactor authentication code'
 				}
 				$Param.Body.otp = $OneTimePassword
