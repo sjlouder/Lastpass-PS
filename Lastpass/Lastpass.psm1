@@ -17,6 +17,8 @@
 
 Using Namespace System.Security.Cryptography
 
+$Script:Interactive = [Environment]::UserInteractive -and 
+	!([Environment]::GetCommandLineArgs() -eq '-NonInteractive')
 $Script:Epoch = [DateTime] '1970-01-01 00:00:00'
 $Script:TypeDisplayProperties = @{
 	Account = @(
@@ -84,7 +86,7 @@ Function Connect-Lastpass {
 	"Iterations parameters:`n{0}" -f ($Param.Body | Out-String) | Write-Debug
 	[Int] $Iterations = Invoke-RestMethod @Param
 	Write-Debug "Iterations: $Iterations"
-		
+
 	$Key = New-Key -Credential $Credential -Iterations $Iterations
 	$Hash = New-LoginHash -Key $Key -Credential $Credential -Iterations $Iterations
 
@@ -118,11 +120,11 @@ Function Connect-Lastpass {
 				$Capabilities = $Response.Error.Capabilities -split ','
 				If(!$Type -or !$Capabilities){ Throw 'Could not determine out-of-band type' }
 				
+				$Param.Body.outofbandrequest = 1
 				$Prompt = "Complete multifactor authentication through $Type"
-				If($Capabilities -contains 'Passcode' -and !$OneTimePassword){
+				If($Capabilities -contains 'Passcode' -and $Interactive -and !$OneTimePassword ){
 					$Prompt += ' or enter a one time passcode: '
 					Write-Host -NoNewLine $Prompt
-					$Param.Body.outofbandrequest = 1
 					Do {
 						$Response = (Invoke-RestMethod @Param).Response
 						If($Response.Error.Cause -eq 'OutOfBandRequired'){
@@ -152,9 +154,8 @@ Function Connect-Lastpass {
 						Start-Sleep 1
 					}Until($Response.OK)
 				}
-				ElseIf($Capabilities -notcontains 'Passcode'){
+				ElseIf($Capabilities -notcontains 'Passcode' -or !$Interactive){
 					Write-Host -NoNewLine $Prompt
-					$Param.Body.outofbandrequest = 1
 					Do {
 						$Response = (Invoke-RestMethod @Param).Response
 						If($Response.Error.Cause -eq 'OutOfBandRequired'){
