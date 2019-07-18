@@ -143,6 +143,7 @@ Function Connect-Lastpass {
 									$Param2.Body.otp = $OneTimePassword
 									$Param2.Body | Out-String | Write-Debug
 									$Response = (Invoke-RestMethod @Param2).Response
+									$OneTimePassword = $Null
 									Break
 								}
 								$OneTimePassword += $Input.KeyChar
@@ -170,7 +171,7 @@ Function Connect-Lastpass {
 
 				}
 			}
-			'GoogleAuthRequired|OTPRequired|OutOfBandRequired' {
+			{$_ -in 'GoogleAuthRequired', 'OTPRequired' -or ($_ -eq 'OutOfBandRequired' -and $OneTimePassword)} {
 				If(!$OneTimePassword){
 					If(!$Interactive){
 						Throw ('Powershell is running in noninteractive mode. ' + 
@@ -189,7 +190,7 @@ Function Connect-Lastpass {
 			Default { Throw $Response.Error.Message }
 		}
 	}
-
+	$Response.OK | Out-String | Write-Debug
 	If(!$Response.OK){ Throw 'Login unsuccessful' }
 	
 	$Script:Session = [PSCustomObject] @{
@@ -213,7 +214,7 @@ Function Connect-Lastpass {
 	$Script:WebSession.Cookies.Add($Cookie)
 	If(!$?){ Throw 'Unable to create session' }
 
-	Sync-Lastpass | Out-Null
+	Sync-Lastpass -Debug:$False | Out-Null
 
 	If($PSBoundParameters.Debug){ Return $Response }
 
