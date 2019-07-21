@@ -3,6 +3,7 @@ Import-Module -Force $PSScriptRoot/../Lastpass -Verbose:$False
 InModuleScope Lastpass {
 
 	$ScriptRoot = $PSScriptRoot
+	$Interactive = $True
 
 	# Make sure no tests actually reach out to the internet
 	Mock Invoke-RestMethod
@@ -158,7 +159,10 @@ InModuleScope Lastpass {
 				}
 				Assert-MockCalled 'Read-Host' -Exactly -Times 0
 			}
-		
+			
+			#FIXME: This currently fails in DevOps because it checks for interactive mode.
+			# Possibly override Interactive parameter in test file?
+			# TODO: More noninteractive mode tests
 			Connect-Lastpass -Credential $Credential | Out-Null
 			It 'Prompts user for app OTP if OTP parameter not included' {
 				Assert-MockCalled 'Read-Host' -Exactly -Times 1
@@ -189,7 +193,7 @@ InModuleScope Lastpass {
 				CommandName = 'Invoke-RestMethod'
 				ParameterFilter = { 
 					$URI -eq 'https://lastpass.com/login.php' -and
-					!$Body.outofbandrequest
+					!$Body.OutOfBandRequest
 				}
 			}
 			Mock @OOBEnabledMockParam {
@@ -208,7 +212,7 @@ InModuleScope Lastpass {
 				CommandName = 'Invoke-RestMethod'
 				ParameterFilter = { 
 					$URI -eq 'https://lastpass.com/login.php' -and
-					$Body.outofbandrequest
+					$Body.outofbandrequest -eq 1
 				}
 			}
 			Mock @OOBPollMockParam {
@@ -244,7 +248,13 @@ InModuleScope Lastpass {
 
 			}
 
+			Mock Start-Sleep {}
+
 			Connect-Lastpass -Credential $Credential | Out-Null
+
+			It 'Attempts to log in normally' {
+				Assert-MockCalled @OOBEnabledMockParam
+			}
 
 			It 'Prompts user to complete OOB authentication' {
 				Assert-MockCalled Write-Host -ParameterFilter { 
@@ -313,14 +323,13 @@ InModuleScope Lastpass {
 
 				It 'Uses the $OneTimePassword parameter if supplied' {
 					Connect-Lastpass -Credential $Credential -OneTimePassword '12312312' | Out-Null
+						
+					# Assert-MockCalled @OOBEnabledMockParam
 
 					Assert-MockCalled Invoke-RestMethod -ParameterFilter { 
 						$URI -eq 'https://lastpass.com/login.php' -and 
 						$Body.OTP -eq '12312312'
 					}
-				
-
-					Assert-MockCalled @OOBEnabledMockParam
 				}
 
 			}
