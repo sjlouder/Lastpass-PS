@@ -212,7 +212,7 @@ InModuleScope Lastpass {
 				CommandName = 'Invoke-RestMethod'
 				ParameterFilter = { 
 					$URI -eq 'https://lastpass.com/login.php' -and
-					$Body.outofbandrequest -eq 1
+					$Body.outofbandrequest
 				}
 			}
 			Mock @OOBPollMockParam {
@@ -248,12 +248,14 @@ InModuleScope Lastpass {
 
 			}
 
-			Mock Start-Sleep {}
+			Mock Start-Sleep
 
 			Connect-Lastpass -Credential $Credential | Out-Null
 
 			It 'Attempts to log in normally' {
-				Assert-MockCalled @OOBEnabledMockParam
+				Assert-MockCalled Invoke-RestMethod -ParameterFilter {
+					$URI -eq 'https://lastpass.com/login.php' -and !$Body.ContainsKey('outofbandrequest')
+				}
 			}
 
 			It 'Prompts user to complete OOB authentication' {
