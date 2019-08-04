@@ -60,6 +60,23 @@ InModuleScope Lastpass {
 			Assert-MockCalled 'Invoke-RestMethod' -ParameterFilter {
 				$URI -eq 'https://lastpass.com/login.php'
 			}
+			$Session | Should -Not -BeNullOrEmpty
+			'UID',
+			'SessionID',
+			'Token',
+			'EncryptedPrivateKey',
+			'PrivateKey',
+			'Iterations',
+			'Username',
+			'Key' | ForEach {
+				#TODO: Test each property's value
+				$Session[$_] | Should -Not -BeNullOrEmpty
+			}
+		}
+
+		It 'Decrypts the private key' {
+			$Session.PrivateKey | Should -Not -BeNullOrEmpty
+			#TODO: $Session.PrivateKey | Should -Be 'ExpectedValue'
 		}
 		
 		# TODO: Refactor  this to separate tests for New-Key and New-LoginHash
@@ -240,18 +257,33 @@ InModuleScope Lastpass {
 			$Script:Blob | Should -Not -BeNullOrEmpty
 		}
 
+		It 'Parses the blob version from blob' {
+			$Script:Blob | Should -Be $ExpectedValue
+		}
+
+		It 'Parses accounts from the blob' {}
+		
+		It 'Parses secure notes from the blob' {}
+		
+		It 'Parses folders from the blob' {}
+
+		It 'Parses shared folders from the blob' {}
+
+		# TODO: Add tests for all the different blob datatypes
+		
 		It 'Decrypts the account names' {
 			@(
 				'ThisIsTheAccountName',
 				'SecureNote1',
 				'TestName#$/3'
-			) | Should -BeIn $Script:Blob.Accounts.Account.Name
+			) | Should -BeIn $Script:Blob.Accounts.Name
 		}
 
-		It 'Outputs ?' {
-			
-		}
+		It 'Decrypts the account folder' {}
 
+		It 'Decrypts the folder name for each account and note' {}
+
+		It 'Outputs ?' {}
 	}
 
 	Describe New-Account {
