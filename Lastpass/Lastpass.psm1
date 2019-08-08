@@ -253,63 +253,84 @@ Function Connect-Lastpass {
 		UID					= $Response.OK.UID
 		SessionID			= $Response.OK.SessionID
 		Token				= $Response.OK.Token
-		EncodedPrivateKey	= $Response.OK.PrivateKeyEnc
 		PrivateKey			= [RSAParameters]::New()
 		Iterations			= $Response.OK.Iterations
 		Username			= $Response.OK.LPUsername
 		Key					= $Key
 	}
 	
-	If($Session.EncodedPrivateKey){
-		If($Session.EncodedPrivateKey[0] -eq '!'){
+	If($Response.OK.PrivateKeyEnc){
+		If($Response.OK.PrivateKeyEnc[0] -eq '!'){
 			Write-Debug 'Version 2 private key encoding'
-			$DecryptedKey = [Convert]::FromBase64String($Session.EncodedPrivateKey) -join '' |
+			$DecryptedKey = [Convert]::FromBase64String($Response.OK.PrivateKeyEnc) -join '' |
 				ConvertFrom-LPEncryptedString 
 		}
 		Else{
 			Write-Debug 'Version 1 private key encoding'
 			$DecryptedKey = '!{0}{1}' -f @(
 				([char[]] $S.Session.Key -join ''),
-				($Session.EncodedPrivateKey | ConvertFrom-Hex)
+				($Response.OK.PrivateKeyEnc | ConvertFrom-Hex)
 			) | ConvertFrom-LPEncryptedString
 		}
 
 		If(!$DecryptedKey){
 			Write-Warning 'Failed to decrypt private key'
 		}
-		ElseIf($DecryptedKey -notmatch '.*ey<(.*)>LastPassPrivateKey$'){
+		ElseIf($DecryptedKey -notmatch '^.*ey<(.*)>LastPassPrivateKey$'){
 			Write-Warning 'Failed to decode decrypted private key'
 		}
 		Else{
 			$ASN1 = [Byte[]][Char[]] ($Matches[1] | ConvertFrom-Hex)
+			Write-Debug "ASN1 Length: $($ASN1.Length)"
 			# This is a ASN.1 encoding, do basic parsing
 			$Sequence = (Read-ASN1Item -Blob $ASN1).Value
+			Write-Debug "Sequence Parsed. Length: $($Sequence.Length)"
 			$Index = 0
-			1..2 | ForEach { $Index += (Read-ASN1Item -Blob $Sequence -Index $Index).Index }
+			1..2 | ForEach { Write-Debug "$_"; $Index = (Read-ASN1Item -Blob $Sequence -Index $Index).Index }
+			Write-Debug "Sequence 2 Index: $Index"
 			$Sequence2 = (Read-ASN1Item -Blob $Sequence -Index $Index).Value
+			Write-Debug "Sequence 2 Parsed. Length: $($Sequence2.Length)"
+
 			$Sequence3 = (Read-ASN1Item -Blob $Sequence2).Value
+			Write-Debug "Sequence 3 Parsed. Length: $($Sequence3.Length)"
+
 			$Index = (Read-ASN1Item -Blob $Sequence3).Index
-			$Sequence4 = (Read-ASN1Item -Blob $Sequence3 -Index $Index).Value
-			
-			$RSAParameters = @()
-			$Index = 0
-			1..8 | ForEach {
-				$Bytes = Read-ASN1Item -Blob $Sequence4 -Index $Index
-				$Index = $Value.Index
+
+			# RSAParameters is a struct, so have to create a populated 
+			# copy and then assign the entire struct at once.
+			$Parameters = @{}
+
+			'Modulus',
+			'Exponent',
+			'D',
+			'P',
+			'Q',
+			'DP',
+			'DQ',
+			'InverseQ' | ForEach {
+				Write-Debug $_
+				$ASN1Item = Read-ASN1Item -Blob $Sequence3 -Index $Index
+				$ASN1Item.Value -is [Array] | Write-Debug
+				$Index = $ASN1Item.Index
 				$ByteIndex = 0
-				While($Bytes[$ByteIndex] -ne 0){$ByteIndex++}
-				$Value = $Bytes[$ByteIndex..($Bytes.Length - 1)]
+				# This is hacky, but I can't get it to treat a single byte value as an array
+				If($ASN1Item.Value -is [Array]){
+					While($ASN1Item.Value[$ByteIndex] -eq 0){
+						write-debug 'skipping 0';
+						$ByteIndex++
+					}
+					"Indices: {0}, {1}" -f $ByteIndex, ($ASN1Item.Value.Length -1) | Write-Debug
+					$Parameters[$_] = $ASN1Item.Value[$ByteIndex..($ASN1Item.Value.Length -1)]
+				}
+				Else{
+					$Parameters[$_] = $ASN1Item.Value
+				}
 			}
 
-			$Session.PrivateKey.Modulus = $RSAParameters[0]
-			$Session.PrivateKey.Exponent = $RSAParameters[1]
-			$Session.PrivateKey.D = $RSAParameters[2]
-			$Session.PrivateKey.P =$RSAParameters[3]
-			$Session.PrivateKey.Q = $RSAParameters[4]
-			$Session.PrivateKey.DP = $RSAParameters[5]
-			$Session.PrivateKey.DQ = $RSAParameters[6]
-			$Session.PrivateKey.InverseQ = $RSAParameters[7]
-			
+			$Parameters | Out-String | Write-Debug
+
+			# New-Object seems to be required to set struct members at creation
+			$Session.PrivateKey = New-Object RSAParameters -Property $Parameters
 		}
 	}
 
@@ -319,7 +340,6 @@ Function Connect-Lastpass {
 		'/',
 		'lastpass.com'
 	)
-
 	$Script:WebSession = [Microsoft.Powershell.Commands.WebRequestSession]::New()
 	$Script:WebSession.Cookies.Add($Cookie)
 	If(!$?){ Throw 'Unable to create session' }
@@ -437,12 +457,17 @@ Function Sync-Lastpass {
 				}
 				Else{
 					$RSA = [RSACryptoServiceProvider]::New()
-					$RSA.ImportParameters($Script:Session.Key)
-					$Folder.Key = (
-						RSA.Decrypt(
-							($Folder.RSAEncryptedFolderKey | ConvertFrom-Hex)
-						)
-					) -join '' | ConvertFrom-Hex
+					$RSA.ImportParameters($Script:Session.PrivateKey)
+					Try{
+						$Folder.Key = (
+							RSA.Decrypt(
+								($Folder.RSAEncryptedFolderKey | ConvertFrom-Hex)
+							)
+						) -join '' | ConvertFrom-Hex
+					}
+					Catch{
+						Write-Error 'Failed to decode SHAR key'
+					}
 				}
 
 				$Blob.Folders += [PSCustomObject] $Folder
@@ -1261,29 +1286,39 @@ Function Read-ASN1Item {
 	[CmdletBinding()]
 	Param(
 		[Byte[]] $Blob,
-		[Int] $Index = 0
+		[Int] $Index = 0,
+		[Switch] $StripLeadingZeroes
 	)
-	$Object = @{
+
+	Write-Debug "Read-ASN1Item Blob Length: $($Blob.Length), Index: $Index"
+	$Output = @{
 		Type = Switch($Blob[$Index] -band 0x1F){
 			2		{ 'Integer' }
 			4		{ 'Bytes' }
 			5		{ 'Null' }
 			16		{ 'Sequence' }
-			Default { Return $Null }
+			Default { $Blob[$Index] -band 0x1F }
 		}
 	}
 	$Size = $Blob[($Index+=1)]
-	If($Size -band 0x80 -ne 0){
+	If(($Size -band 0x80) -ne 0){
+		$Length = $Size -band 0x7F
 		$Size = 0
-		$Length = $Blob[$Index] -band 0x7F
-		0..$Length | ForEach {
-			$Size = $Size * 256 + ([Byte] $Blob[($Index+=1)])
+		1..$Length | ForEach {
+			$Size = $Size * 256 + ($Blob[($Index+=1)])
 		}
 	}
-	$Object.Value = $Blob[($Index)..($Index+=$Size)]
-	$Object.Index = $Index
-	Write-Output $Object
+	# If($StripLeadingZeroes){
+	# 	While($Blob[($Index+1)] -eq 0){ $Index++ }
+	# }
+	$Output.Value = $Blob[($Index+=1)..(($Index+=$Size)-1)]
+	$Output.Value -is [Array] | Write-Debug
+	$Output.Index = $Index
+
+	$Output | Out-String | Write-Debug
+	Write-Output [PSCustomObject] $Output
 }
+
 
 Function ConvertFrom-LPEncryptedString {
 	
