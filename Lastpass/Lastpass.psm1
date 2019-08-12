@@ -798,103 +798,6 @@ Function Set-Note {
 
 
 
-Function New-Password {
-	<#
-	.SYNOPSIS
-	Generates a new password
-
-	.DESCRIPTION
-	Long description
-
-	.PARAMETER Length
-	The length of the password
-	By default, the length will be between 19 and 37 characters
-
-	.PARAMETER InvalidCharacters
-	The sets of invalid characters.
-	Specify a regular expression character set.
-
-	.PARAMETER ValidCharacters
-	The sets of invalid characters.
-	Specify a regular expression character set.
-
-	.PARAMETER CharacterSet
-	The preset character set of valid characters.
-
-	.EXAMPLE
-	New-Password
-	#>
-
-	[CmdletBinding(DefaultParameterSetName = 'InvalidCharacters')]
-	Param(
-		[Int] $Length,
-
-		[Parameter(ParameterSetName = 'InvalidCharacters')]
-		[String] $InvalidCharacters,
-
-		[Parameter(ParameterSetName = 'ValidCharacters')]
-		[String] $ValidCharacters,
-
-		[ValidateSet(
-			'Alphanumeric',
-			'Alphabetic',
-			'UpperCase',
-			'LowerCase',
-			'Numeric',
-			'XML',
-			'Base64'
-		)]
-		[Parameter(ParameterSetName = 'CharacterSet')]
-		[String] $CharacterSet
-	)
-
-	$ValidCharacterSet = ("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ" +
-							"0123456789``~!@#$%^&*()-_=+[{]}\|;:'`",<.>/? ")
-	$CharacterSets = @{
-		Alphanumeric = '^A-Za-z0-9'
-		Alphabetic	 = '^A-Za-z'
-		UpperCase	 = '^A-Z'
-		LowerCase	 = '^a-z'
-		Numeric		 = '^0-9'
-		XML			 = "<>&`"'"
-		Base64		 = '^A-Za-z0-9+/='
-	}
-	$RNG = [RNGCryptoServiceProvider]::New()
-	[Byte[]] $Bytes = 0,0,0,0
-
-	#TODO: What if none are provided?
-	Switch($PSCmdlet.ParameterSetName){
-		InvalidCharacters { $Filter = "[$InvalidCharacters]" }
-		ValidCharacters { $Filter = "[^$ValidCharacters]" }
-		CharacterSet { $Filter = "[{0}]" -f $CharacterSets[$CharacterSet] }
-	}
-	If($Filter){
-		$ValidCharacterSet = $ValidCharacterSet -creplace $Filter
-		If(!$ValidCharacterSet.Length){ Throw 'No valid characters for generating password' }
-	}
-
-	If(!$Length){
-		# Arbitrary numbers are arbitrary
-		$MinLength = 19
-		$MaxLength = 37
-		$RNG.GetBytes($Bytes);
-		$RandomNumber = [BitConverter]::ToUInt32($Bytes,0) % ($MaxLength - $MinLength + 1)
-		$Length = $RandomNumber + $MinLength
-	}
-
-	$Password = [String]::Join( '', (
-		0..$Length | ForEach {
-			$RNG.GetBytes($Bytes);
-			$RandomNumber = [BitConverter]::ToUInt32($Bytes,0) % $Chars.Length
-			$ValidCharacterSet[$RandomNumber]
-		}
-	))
-
-	Write-Output $Password
-}
-
-
-
 <#
 New-Account {}
 
@@ -1738,7 +1641,6 @@ Function Set-Session {
 	$Script:Session = $Session.Session
 
 }
-
 
 # Export-ModuleMember -Function @(
 # 	'Connect-Lastpass'
