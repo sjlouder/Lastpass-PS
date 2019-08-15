@@ -871,12 +871,21 @@ Function Get-Item {
 		)]
 		[String] $Name,
 
-		[ValidateSet('Account', 'Note', 'All')]
-		[String] $Type = 'All'
+		[ValidateSet('Account', 'Note')]
+		[String] $Type
 	)
+	BEGIN {
+		$Store = Switch($Type){
+			'Account' { $Script:Blob.Accounts }
+			'Note' { $Script:Blob.SecureNotes }
+			Default { $Script:Blob.Accounts + $Script:Blob.SecureNotes }
+		}
+	}
 	PROCESS {
+
+
 		If($Name){
-			$Script:Blob.Accounts |
+			$Store |
 				Where {
 					$_.Name -eq $Name -and
 					($Type -eq 'All' -or
@@ -897,62 +906,54 @@ Function Get-Item {
 						If(Compare-Object @Param){ Throw 'Password confirmation failed' }
 						$Script:PasswordPrompt = [DateTime]::Now
 					}
+					$_ | Write-Output
 
-					If(!([Int]$_.SN)){
-						[PSCustomObject] @{
-							ID				= $_.ID
-							Name			= $_.Name
-							URL				= ($_.URL -split '([a-f0-9]{2})' | ForEach {
-													If($_){ [Char][Convert]::ToByte($_,16) }
-												}) -join ''
-							Folder			= $_.Group | ConvertFrom-LPEncryptedString
-							Username		= $_.Username | ConvertFrom-LPEncryptedString
-							Credential		= [PSCredential]::New(
-												($_.Login.U | ConvertFrom-LPEncryptedString),
-												($_.Login.P | ConvertFrom-LPEncryptedString | ForEach {
-														If($_){ $_ | ConvertTo-SecureString -AsPlainText -Force }
-														Else { [SecureString]::New() }
-													})
-												)
-							Notes			= $_.Extra | ConvertFrom-LPEncryptedString
-							Favorite		= !!([Int] $_.Fav)
-							Bookmark		= !!([Int] $_.IsBookmark)
-							PasswordProtect = !!([Int] $_.PWProtect)
-							LaunchCount		= [Int] $_.Launch_Count
-							LastModified	= $Epoch.AddSeconds($_.Last_Modified)
-							LastAccessed	= [DateTime]::Now
+					# If(!([Int]$_.SN)){
+					# 	[PSCustomObject] @{
+					# 		ID				= $_.ID
+					# 		Name			= $_.Name
+					# 		URL				= ($_.URL -split '([a-f0-9]{2})' | ForEach {
+					# 								If($_){ [Char][Convert]::ToByte($_,16) }
+					# 							}) -join ''
+					# 		Folder			= $_.Group | ConvertFrom-LPEncryptedString
+					# 		Username		= $_.Username | ConvertFrom-LPEncryptedString
+					# 		Credential		= [PSCredential]::New(
+					# 							($_.Login.U | ConvertFrom-LPEncryptedString),
+					# 							($_.Login.P | ConvertFrom-LPEncryptedString | ForEach {
+					# 									If($_){ $_ | ConvertTo-SecureString -AsPlainText -Force }
+					# 									Else { [SecureString]::New() }
+					# 								})
+					# 							)
+					# 		Notes			= $_.Extra | ConvertFrom-LPEncryptedString
+					# 		Favorite		= !!([Int] $_.Fav)
+					# 		Bookmark		= !!([Int] $_.IsBookmark)
+					# 		PasswordProtect = !!([Int] $_.PWProtect)
+					# 		LaunchCount		= [Int] $_.Launch_Count
+					# 		LastModified	= $Epoch.AddSeconds($_.Last_Modified)
+					# 		LastAccessed	= [DateTime]::Now
 
-						} | Add-Member -Passthru -MemberType ScriptProperty -Name Password -Value {
-							$This.Credential.GetNetworkCredential().Password
-						} | Set-ObjectMetadata 'Account' $Script:Schema.Account.DefaultFields |
-							Write-Output
-					}
-					Else{
-						[PSCustomObject] @{
-							ID				= $_.ID
-							Name			= $_.Name
-							Content			= $_.Extra | ConvertFrom-LPEncryptedString
-							Folder			= $_.Group | ConvertFrom-LPEncryptedString
-							Favorite		= !!([Int] $_.Fav)
-							PasswordProtect	= !!([Int] $_.PWProtect)
-							LastModified	= $Epoch.AddSeconds($_.Last_Modified)
-							LastAccessed	= [DateTime]::Now
-							# NoteType
-						} | Set-ObjectMetadata -TypeName 'Note' -DefaultDisplayProperties $Script:Schema.Note.DefaultFields |
-							Write-Output
-					}
+					# 	} | Add-Member -Passthru -MemberType ScriptProperty -Name Password -Value {
+					# 		$This.Credential.GetNetworkCredential().Password
+					# 	} | Set-ObjectMetadata 'Account' $Script:Schema.Account.DefaultFields |
+					# 		Write-Output
+					# }
+					# Else{
+					# 	[PSCustomObject] @{
+					# 		ID				= $_.ID
+					# 		Name			= $_.Name
+					# 		Content			= $_.Extra | ConvertFrom-LPEncryptedString
+					# 		Folder			= $_.Group | ConvertFrom-LPEncryptedString
+					# 		Favorite		= !!([Int] $_.Fav)
+					# 		PasswordProtect	= !!([Int] $_.PWProtect)
+					# 		LastModified	= $Epoch.AddSeconds($_.Last_Modified)
+					# 		LastAccessed	= [DateTime]::Now
+					# 		# NoteType
+					# 	} | Set-ObjectMetadata -TypeName 'Note' -DefaultDisplayProperties $Script:Schema.Note.DefaultFields |
+					# 		Write-Output
+					# }
 				}
 		}
-		Else{
-			$Script:Blob.Accounts |
-				Where {
-					$_.Name -and
-					($Type -eq 'All' -or
-						!!([Int] $_.SN) -eq ($Type -eq 'Note'))
-				} |
-				Select ID, Name |
-				Write-Output
-		}
+		Else{ $Store | Select ID, Name | Write-Output }
 	}
 }
 
@@ -1410,7 +1411,7 @@ Function ConvertFrom-LPEncryptedString {
 	)
 
 	BEGIN {
-		If(!Key -and !$Session.Key){ Throw 'No decryption key found.' }
+		If(!$Key -and !$Session.Key){ Throw 'No decryption key found.' }
 		$AES = [AesManaged]::New()
 		$AES.KeySize = 256
 		$AES.Key = $Session.Key
