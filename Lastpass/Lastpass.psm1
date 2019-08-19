@@ -49,7 +49,7 @@ $Script:Schema = @{
 			GroupID = 'String' #?
 			Deleted = 'Boolean' #?
 			EncryptedAttachmentKey = 'String'#'Encrypted'
-			AttachmentPresent = 'Boolean'
+			AttachmentPresent = 'String'
 			IndividualShare = 'Boolean' #?
 			NoteType = 'String' #?
 			NoAlert = 'String' #?
@@ -82,7 +82,7 @@ $Script:Schema = @{
 			RSAEncryptedFolderKey = 'Skip'
 			Name = 'Skip'
 			ReadOnly = 'Boolean'
-			Unknown = 'Skip' #Not sure what this is
+			Give = 'Skip' #Not sure what this is
 			AESFolderKey = 'Skip'
 		}
 		DefaultFields = @(
@@ -448,15 +448,16 @@ Function Sync-Lastpass {
 						Default		{ $Item }
 					}
 					Write-Debug "End Field $_"
-				}
+			}
 
 				Switch($Account.URL){
 					'http://sn' {
+						Write-Debug 'Item is Secure note'
 						$Blob.SecureNotes += [PSCustomObject] @{
 							PSTypeName = 'Lastpass.SecureNote'
 							ID = $Account.ID
 							Name = $Account.Name
-							Folder = $Account.Group
+							Group = $Account.Group
 							NoteType = $Account.NoteType
 							Note = $Account.Note
 							AttachmentPresent = $Account.AttachmentPresent
@@ -469,7 +470,7 @@ Function Sync-Lastpass {
 							DateCreated = $Account.DateCreated
 							LastAccess = $Account.LastModified
 							LastPasswordChange = $Account.LastPasswordChange
-							LastModified = $Account.LastModifiedGMT
+							LastModifiedGMT = $Account.LastModifiedGMT
 						}
 					}
 					'http://group' {
@@ -499,6 +500,7 @@ Function Sync-Lastpass {
 					$ItemIndex += $Folder[$_].length + 4
 					Write-Debug "End Field $_"
 				}
+				$Folder.ReadOnly = !!([Int]$Folder.ReadOnly)
 
 				If(!$Folder.AESFolderKey -or !$Folder.RSAEncryptedFolderKey){
 					'Share key not found for ID: {0}' -f $Folder.ID | Write-Warning
@@ -882,7 +884,6 @@ Function Get-Item {
 		}
 	}
 	PROCESS {
-
 
 		If($Name){
 			$Store |

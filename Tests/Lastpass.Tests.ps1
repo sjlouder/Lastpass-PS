@@ -255,13 +255,11 @@ InModuleScope Lastpass {
 
 	Describe Sync-Lastpass {
 
-		BeforeAll {
-			$Script:Session = [PSCustomObject] @{
-				Key = [Byte[]] @(
-					160,143,117,193,122,157,146,7,23,206,62,167,167,182,117,117,
-					60,118,172,154,146,119,36,238,73,80,241,107,95,3,40,236
-				)
-			}
+		$Script:Session = [PSCustomObject] @{
+			Key = [Byte[]] @(
+				160,143,117,193,122,157,146,7,23,206,62,167,167,182,117,117,
+				60,118,172,154,146,119,36,238,73,80,241,107,95,3,40,236
+			)
 		}
 
 		#TODO: Replace this with a base64 response
@@ -269,9 +267,14 @@ InModuleScope Lastpass {
 			CommandName = 'Invoke-RestMethod'
 			ParameterFilter = { $URI -eq 'https://lastpass.com/getaccts.php'}
 		}
-		Mock @DownloadMockParam { [Char[]][Convert]::FromBase64String((Get-Content $ScriptRoot/Vault)) -join ''}
+		Mock @DownloadMockParam { 
+			[Char[]][Convert]::FromBase64String((Get-Content $ScriptRoot/Vault)) -join ''
+		}
 
-		$Result = Sync-Lastpass
+		$Expected = Get-Content $ScriptRoot/ParsedVault.json | ConvertFrom-Json
+
+
+		Sync-Lastpass
 
 		It 'Calls the download API' {
 			Assert-MockCalled @DownloadMockParam
@@ -282,40 +285,82 @@ InModuleScope Lastpass {
 		}
 
 		It 'Parses the blob version from blob' {
-			$Blob.Version | Should -Be 101
+			$Blob.Version | Should -Be 107
 		}
 
 		# TODO: Test all properties of all objects for below tests
 		It 'Parses and decrypts the accounts' {
 			$Blob.Accounts.Length | Should -Be 5
-			'Account1',
-			'Account2',
-			'aaa.com',
-			'ShareAccount1',
-			'TestName#$/3' |
-				ForEach { $_ | Should -BeIn $Blob.Accounts.Name }
+			$Expected.Accounts | ForEach {
+				$Reference = $_
+				$Account = ($Blob.Accounts | Where ID -eq $Reference.ID)
+				$Account | Should -Not -BeNullOrEmpty
+				Compare-Object $Reference.PSObject.Properties $Account.PSObject.Properties -Property Name |
+					Should -BeNullOrEmpty
+
+				$Account.PSObject.Properties.Name | ? {$_ -notin 'Password', 'Note', 'Group'} | ForEach {
+					If($Account.$_ -is [DateTime]){
+						$Account.$_.DateTime | Should -Be ($Epoch.AddSeconds([Int]$Reference.$_).DateTime)
+					}Else{ $Account.$_ | Should -Be $Reference.$_ }
+				}
+			}
 		}
 
 		It 'Parses and decrypts the secure notes' {
 			$Blob.SecureNotes.Length | Should -Be 2
-			'test',
-			'Note In Folder' |
-				ForEach { $_ | Should -BeIn $Blob.SecureNotes.Name }
+			$Expected.SecureNotes | ForEach {
+				$Reference = $_
+				$Note = ($Blob.SecureNotes | Where ID -eq $Reference.ID)
+				$Note | Should -Not -BeNullOrEmpty
+				Compare-Object $Reference.PSObject.Properties $Note.PSObject.Properties -Property Name |
+					Should -BeNullOrEmpty
+
+				$Note.PSObject.Properties.Name | ? {$_ -notin 'Note', 'Group'} | ForEach {
+					If($Note.$_ -is [DateTime]){
+						$Note.$_.DateTime | Should -Be ($Epoch.AddSeconds([Int]$Reference.$_).DateTime)
+					}Else{ $Note.$_ | Should -Be $Reference.$_ }
+				}
+			}
 		}
 
 		It 'Parses and decrypts the folders' {
 			$Blob.Folders.Length | Should -Be 4
-			'ParentFolder',
-			'ParentFolder\SubFolder',
-			'SubShare' |
-				ForEach { $_ | Should -BeIn $Blob.Folders.Name }
+			$Expected.Folders | ForEach {
+				$Reference = $_
+				# $_ | Out-String | Write-Host
+				$Folder = ($Blob.Folders | Where ID -eq $Reference.ID)
+				$Folder | Should -Not -BeNullOrEmpty
+				Compare-Object $Reference.PSObject.Properties $Folder.PSObject.Properties -Property Name |
+					Should -BeNullOrEmpty
+
+				$Folder.PSObject.Properties.Name | ? {$_ -notin 'Password', 'Note', 'Group'} | ForEach {
+					# Write-Host $_
+					# Write-Host $Folder.$_
+					If($_ -eq 'Name'){
+						$Folder.$_ | Should -Be $Reference.Group
+					}
+					ElseIf($Folder.$_ -is [DateTime]){
+						$Folder.$_.DateTime | Should -Be ($Epoch.AddSeconds([Int]$Reference.$_).DateTime)
+					}Else{ $Folder.$_ | Should -Be $Reference.$_ }
+				}
+			}
 		}
 
-		It 'Parses and decrypts the shared folders' -skip {
+		It 'Parses and decrypts the shared folders' {
 			$Blob.SharedFolders.Length | Should -Be 2
-			'Shared-Share',
-			'Shared-Share2' |
-				ForEach { $_ | Should -BeIn $Blob.SharedFolders.Name }
+			$Expected.SharedFolders | ForEach {
+				$Reference = $_
+				$Folder = ($Blob.SharedFolders | Where ID -eq $Reference.ID)
+				$Folder | Should -Not -BeNullOrEmpty
+				Compare-Object $Reference.PSObject.Properties $Folder.PSObject.Properties -Property Name |
+					Should -BeNullOrEmpty
+				#TODO: Test name
+				$Folder.PSObject.Properties.Name | ? {$_ -notin 'Name'} | ForEach {
+					If($_ -eq 'Key'){
+						([Char[]] $Folder.$_) -join '' | Should -Be ($Reference.$_)
+					}Else{ $Folder.$_ | Should -Be $Reference.$_ }
+				}
+			}
 		}
 
 		It 'Outputs a Lastpass.Sync object' {}
@@ -334,7 +379,7 @@ InModuleScope Lastpass {
 
 		BeforeAll {
 			# FIXME: Need a decrypted version of the blob
-			$Script:Blob = ( (Get-Content $ScriptRoot/Vault))
+			$Script:Blob = Get-Content $ScriptRoot/ParsedVault.json | ConvertFrom-Json
 			$Script:Session = [PSCustomObject] @{
 				Key = [Byte[]] @(
 					160,143,117,193,122,157,146,7,23,206,62,167,167,182,117,117,
@@ -349,10 +394,14 @@ InModuleScope Lastpass {
 
 		It 'Returns all accounts if no account name is specified' {
 			#FIXME: Update
-			$Result.Count | Should -Be 2
+			$Result.Count | Should -Be 6
 			@(
-				@{ ID = '1835977081662683158'; Name = 'ThisIsTheAccountName'}
-				@{ ID = '6989667599733115219'; Name = 'TestName#$/3' }
+				@{ ID = '1835977081662683158'; Name = 'Account1' }
+				@{ ID = '5148901049320353252'; Name = 'Account2' }
+				@{ ID = '3656362581793908418'; Name = 'SiteShareTest' }
+				@{ ID = '5529670392262189424'; Name = 'ShareAccount' }
+				@{ ID = '3524762968710500297'; Name = 'ShareAccount1' }
+				@{ ID = '6274670822055333050'; Name = 'TestName#$/3' }
 			) | ForEach {
 				$Item = $_
 				$Result | Where {
@@ -383,7 +432,7 @@ InModuleScope Lastpass {
 
 		It 'Exposes the last modification timestamp as a DateTime object' {
 			$Result.LastModified | Should -BeOfType DateTime
-			$Result.LastModified | Should -Be ([DateTime] '12/14/18 7:37:21 PM')
+			$Result.LastModified | Should -Be ([DateTime] '01/25/19 3:09:08 AM')
 		}
 
 		It 'Exposes the last access timestamp as a DateTime object' {
