@@ -262,7 +262,6 @@ InModuleScope Lastpass {
 			)
 		}
 
-		#TODO: Replace this with a base64 response
 		$DownloadMockParam = @{
 			CommandName = 'Invoke-RestMethod'
 			ParameterFilter = { $URI -eq 'https://lastpass.com/getaccts.php'}
@@ -354,8 +353,7 @@ InModuleScope Lastpass {
 				$Folder | Should -Not -BeNullOrEmpty
 				Compare-Object $Reference.PSObject.Properties $Folder.PSObject.Properties -Property Name |
 					Should -BeNullOrEmpty
-				#TODO: Test name
-				$Folder.PSObject.Properties.Name | ? {$_ -notin 'Name'} | ForEach {
+				$Folder.PSObject.Properties.Name | ForEach {
 					If($_ -eq 'Key'){
 						([Char[]] $Folder.$_) -join '' | Should -Be ($Reference.$_)
 					}Else{ $Folder.$_ | Should -Be $Reference.$_ }
@@ -378,7 +376,6 @@ InModuleScope Lastpass {
 	Describe Get-Account {
 
 		BeforeAll {
-			# FIXME: Need a decrypted version of the blob
 			$Script:Blob = Get-Content $ScriptRoot/ParsedVault.json | ConvertFrom-Json
 			$Script:Session = [PSCustomObject] @{
 				Key = [Byte[]] @(
@@ -393,7 +390,6 @@ InModuleScope Lastpass {
 		$Result = Get-Account
 
 		It 'Returns all accounts if no account name is specified' {
-			#FIXME: Update
 			$Result.Count | Should -Be 6
 			@(
 				@{ ID = '1835977081662683158'; Name = 'Account1' }

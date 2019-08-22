@@ -432,9 +432,9 @@ Function Sync-Lastpass {
 			LPAV { $Blob.Version = $Data }
 			ACCT {
 				Write-Debug "BEGIN ACCOUNT DECODE"
+				$Account = @{ PSTypeName = 'Lastpass.Account' }
 				If($Blob.SharedFolders[-1].Key){ $Param = @{ Key = $Blob.SharedFolders[-1].Key } }
 				'Param: {0}' -f ($Param | Out-String) | Write-Debug
-				$Account = @{ PSTypeName = 'Lastpass.Account' }
 				$Schema.Account.Fields.Keys | ForEach {
 					Write-Debug "Field: $_"
 					$Item = Read-Item -Blob $Data -Index $ItemIndex -Debug:$False
@@ -448,7 +448,14 @@ Function Sync-Lastpass {
 						Default		{ $Item }
 					}
 					Write-Debug "End Field $_"
-			}
+				}
+
+				If($Blob.SharedFolders[-1].Name){
+					If($Account.Group){
+						$Account.Group = '{0}\{1}'-f $Blob.SharedFolders[-1].Name, $Account.Group
+					}
+					Else{ $Account.Group = $Blob.SharedFolders[-1].Name }
+				}
 
 				Switch($Account.URL){
 					'http://sn' {
@@ -507,26 +514,26 @@ Function Sync-Lastpass {
 				}
 
 				If($Folder.AESFolderKey){
-					[Byte[]][Char[]] $Folder.Key = $Folder.AESFolderKey |
-					ConvertFrom-LPEncryptedString |
-					ConvertFrom-Hex
+					$Folder.Key = [Byte[]][Char[]] ($Folder.AESFolderKey |
+						ConvertFrom-LPEncryptedString |
+						ConvertFrom-Hex)
 				}
 				Else{
 					$RSA = [RSACryptoServiceProvider]::New()
 					$RSA.ImportParameters($Script:Session.PrivateKey)
-					[Byte[]][Char[]] $Folder.Key = (
+					$Folder.Key = [Byte[]][Char[]] ((
 						$RSA.Decrypt(
 							([Byte[]][Char[]]($Folder.RSAEncryptedFolderKey | ConvertFrom-Hex)),
 							$True
 						)
-					) -join '' | ConvertFrom-Hex
+					) -join '' | ConvertFrom-Hex)
 				}
-				#FIXME: Neither key seems to work
-				# $Folder.Name = '!{0}|{1}' -f (
-				# 	$Folder.Name -split '!' -split '\|' |
-				# 		Select -Skip 1 |
-				# 		ForEach { [Convert]::FromBase64String($_) }
-				# ) | ConvertFrom-LPEncryptedString -Key $Folder.Key
+
+				$Folder.Name = '!{0}{1}' -f (
+					$Folder.Name -split '!' -split '\|' |
+						Select -Skip 1 |
+						ForEach { [Char[]][Convert]::FromBase64String($_) -join '' }
+				) | ConvertFrom-LPEncryptedString -Key $Folder.Key
 
 				$Blob.SharedFolders += [PSCustomObject] $Folder
 				Write-Debug "END SHARE DECODE"
@@ -1417,13 +1424,14 @@ Function ConvertFrom-LPEncryptedString {
 		$AES.KeySize = 256
 		$AES.Key = $Session.Key
 		If($Key){
-			Write-Debug ('Using custom key {0}' -f ($Key[0..4] -join ','))
+			Write-Debug ('Using custom key {0}...' -f ($Key[0..4] -join ','))
 			$AES.Key = $Key
 		}
 	}
 
 	PROCESS {
 		$Value | ForEach {
+			Write-Debug "Encrypted value: $_"
 			If($_[0] -eq '!' -and
 			$_.Length -gt 32 -and
 			$_.Length % 16 -eq 1){
