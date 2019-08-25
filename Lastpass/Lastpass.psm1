@@ -529,11 +529,7 @@ Function Sync-Lastpass {
 					) -join '' | ConvertFrom-Hex)
 				}
 
-				$Folder.Name = '!{0}{1}' -f (
-					$Folder.Name -split '!' -split '\|' |
-						Select -Skip 1 |
-						ForEach { [Char[]][Convert]::FromBase64String($_) -join '' }
-				) | ConvertFrom-LPEncryptedString -Key $Folder.Key
+				$Folder.Name = $Folder.Name | ConvertFrom-LPEncryptedString -Base64 -Key $Folder.Key
 
 				$Blob.SharedFolders += [PSCustomObject] $Folder
 				Write-Debug "END SHARE DECODE"
@@ -893,73 +889,25 @@ Function Get-Item {
 	PROCESS {
 
 		If($Name){
-			$Store |
-				Where {
-					$_.Name -eq $Name -and
-					($Type -eq 'All' -or
-					!!([Int] $_.SN) -eq ($Type -eq 'Note'))
-				} | ForEach {
-					If(!!([Int] $_.PWProtect) -and $PasswordPrompt -lt (
-								[DateTime]::Now.Subtract($PasswordTimeout))){
-						# TODO: Should this loop? Possibly for a set number of retries?
-						$Password = Read-Host -AsSecureString 'Please confirm your password'
-						$Credential = [PSCredential]::New($Script:Session.Username, $Password)
-						$Key = New-Key -Credential $Credential -Iterations $Script:Session.Iterations
+			$Store | Where { $_.Name -eq $Name } | ForEach {
+				If($_.PasswordProtect -and 	$PasswordPrompt -lt (
+				[DateTime]::Now.Subtract($PasswordTimeout))){
+					# TODO: Should this loop? Possibly for a set number of retries?
+					$Password = Read-Host -AsSecureString 'Please confirm your password'
+					$Credential = [PSCredential]::New($Script:Session.Username, $Password)
+					$Key = New-Key -Credential $Credential -Iterations $Script:Session.Iterations
 
-						$Param = @{
-							ReferenceObject	 = $Script:Session.Key
-							DifferenceObject = $Key
-							SyncWindow		 = 0
-						}
-						If(Compare-Object @Param){ Throw 'Password confirmation failed' }
-						$Script:PasswordPrompt = [DateTime]::Now
+					$Param = @{
+						ReferenceObject	 = $Script:Session.Key
+						DifferenceObject = $Key
+						SyncWindow		 = 0
 					}
-					$_ | Write-Output
-
-					# If(!([Int]$_.SN)){
-					# 	[PSCustomObject] @{
-					# 		ID				= $_.ID
-					# 		Name			= $_.Name
-					# 		URL				= ($_.URL -split '([a-f0-9]{2})' | ForEach {
-					# 								If($_){ [Char][Convert]::ToByte($_,16) }
-					# 							}) -join ''
-					# 		Folder			= $_.Group | ConvertFrom-LPEncryptedString
-					# 		Username		= $_.Username | ConvertFrom-LPEncryptedString
-					# 		Credential		= [PSCredential]::New(
-					# 							($_.Login.U | ConvertFrom-LPEncryptedString),
-					# 							($_.Login.P | ConvertFrom-LPEncryptedString | ForEach {
-					# 									If($_){ $_ | ConvertTo-SecureString -AsPlainText -Force }
-					# 									Else { [SecureString]::New() }
-					# 								})
-					# 							)
-					# 		Notes			= $_.Extra | ConvertFrom-LPEncryptedString
-					# 		Favorite		= !!([Int] $_.Fav)
-					# 		Bookmark		= !!([Int] $_.IsBookmark)
-					# 		PasswordProtect = !!([Int] $_.PWProtect)
-					# 		LaunchCount		= [Int] $_.Launch_Count
-					# 		LastModified	= $Epoch.AddSeconds($_.Last_Modified)
-					# 		LastAccessed	= [DateTime]::Now
-
-					# 	} | Add-Member -Passthru -MemberType ScriptProperty -Name Password -Value {
-					# 		$This.Credential.GetNetworkCredential().Password
-					# 	} | Set-ObjectMetadata 'Account' $Script:Schema.Account.DefaultFields |
-					# 		Write-Output
-					# }
-					# Else{
-					# 	[PSCustomObject] @{
-					# 		ID				= $_.ID
-					# 		Name			= $_.Name
-					# 		Content			= $_.Extra | ConvertFrom-LPEncryptedString
-					# 		Folder			= $_.Group | ConvertFrom-LPEncryptedString
-					# 		Favorite		= !!([Int] $_.Fav)
-					# 		PasswordProtect	= !!([Int] $_.PWProtect)
-					# 		LastModified	= $Epoch.AddSeconds($_.Last_Modified)
-					# 		LastAccessed	= [DateTime]::Now
-					# 		# NoteType
-					# 	} | Set-ObjectMetadata -TypeName 'Note' -DefaultDisplayProperties $Script:Schema.Note.DefaultFields |
-					# 		Write-Output
-					# }
+					If(Compare-Object @Param){ Throw 'Password confirmation failed' }
+					$Script:PasswordPrompt = [DateTime]::Now
 				}
+				$_.LastAccessed = [DateTime]::Now
+				$_ | Write-Output
+			}
 		}
 		Else{ $Store | Select ID, Name | Write-Output }
 	}
@@ -1248,26 +1196,26 @@ Function New-LoginHash {
 	)
 	$Password = $Credential.GetNetworkCredential().Password
 	$Hash = Switch($Iterations){
-			1 {
-				[SHA256Managed]::New().ComputeHash(
-					[Byte[]][Char[]] (
-						(($Key | ForEach { "{0:x2}" -f $_ }) -join '') +
-						$Password
+				1 {
+					[SHA256Managed]::New().ComputeHash(
+						[Byte[]][Char[]] (
+							(($Key | ForEach { "{0:x2}" -f $_ }) -join '') +
+							$Password
+						)
 					)
-				)
-				Break
+					Break
+				}
+				{$_ -gt 1} {
+					[Rfc2898DeriveBytes]::New(
+						$Key,
+						([Byte[]][Char[]] $Password),
+						1,
+						[HashAlgorithmName]::SHA256
+					).GetBytes(32)
+					Break
+				}
+				Default { Throw "Invalid Iteration value: '$Iterations'" }
 			}
-			{$_ -gt 1} {
-				[Rfc2898DeriveBytes]::New(
-					$Key,
-					([Byte[]][Char[]] $Password),
-					1,
-					[HashAlgorithmName]::SHA256
-				).GetBytes(32)
-				Break
-			}
-			Default { Throw "Invalid Iteration value: '$Iterations'" }
-		}
 	$Hash = ($Hash | ForEach { "{0:x2}" -f $_ }) -join ''
 
 	Write-Debug "Hash: $Hash"
@@ -1278,47 +1226,44 @@ Function New-LoginHash {
 Function Read-Item {
 	<#
 	.SYNOPSIS
-	 Short description
+	Reads an item from a Lastpass blob
 
-	.DESCRIPTION
-	Long description
+	.PARAMETER Blob
+	The Lastpass blob
 
-	.PARAMETER ParameterName
-	Parameter description
-
-	.EXAMPLE
-	Read-Item
+	.PARAMETER Index
+	The start index into the blob to start reading from
 
 	.EXAMPLE
-	Read-Item
+	Read-Item $Blob
+	Reads an item from Lastpass Blob $Blob, starting from index 0
+
+	.EXAMPLE
+	Read-Item $Blob $Index
+	Reads an item from Lastpass Blob $Blob, starting from index $Index
+
 	#>
 
 	[CmdletBinding()]
 	Param(
+		[Parameter(Mandatory)]
 		[String] $Blob,
-		[Int] $Index
+
+		[Int] $Index = 0
 	)
-	# Try{
-		Write-Debug "Read-Item start index: $Index"
-		#"Blob Snippet: {0}" -f ($Blob[$Index..($Index+50)] -join '') | Write-Debug
+	Write-Debug "Read-Item start index: $Index"
+	"Blob Snippet: {0}" -f ($Blob[$Index..($Index+50)] -join '') | Write-Debug
 
 
-		$Size = $Blob[($Index)..($Index+=3)]
-		#Write-Host $Size
-		#[BitConverter]::ToUInt32($Size,0) | Write-Host
-		If([BitConverter]::IsLittleEndian){ [Array]::Reverse($Size) }
-		#Write-Host $Size
-		$Size = [BitConverter]::ToUInt32($Size,0)
-		Write-Debug "Size: $Size"
-		If($Size){
-			$Data = $Blob[($Index+=1)..(($Index+=$Size)-1)] -join ''
-			Write-Debug "Data: $Data"
-			Write-Output $Data
-		}
-	# }
-	# Catch{
-	# 	Throw 'Hit error'
-	# }
+	$Size = $Blob[($Index)..($Index+=3)]
+	If([BitConverter]::IsLittleEndian){ [Array]::Reverse($Size) }
+	$Size = [BitConverter]::ToUInt32($Size,0)
+	Write-Debug "Size: $Size"
+	If($Size){
+		$Data = $Blob[($Index+=1)..(($Index+=$Size)-1)] -join ''
+		Write-Debug "Data: $Data"
+		Write-Output $Data
+	}
 
 }
 
@@ -1332,21 +1277,30 @@ Function Read-ASN1Item {
 	Lastpass' private key is sent using an ASN1 encoded byte array.
 	This function does basic parsing of an ASN1 encoded data structure.
 
-	.PARAMETER ParameterName
-	Parameter description
+	.PARAMETER Blob
+	The ASN1 encoded byte array
+
+	.PARAMETER Index
+	The start index into the byte array to start reading from
+
+	.PARAMETER StripLeadingZeros
+	Whether to strip out the leading zero bytes from the result
 
 	.EXAMPLE
-	Read-ASN1
+	Read-ASN1 -Blob $Blob
+	Reads the ASN1 encoded item from the $Blob byte array, starting at index 0
 
 	.EXAMPLE
-	Read-ASN1
+	Read-ASN1 -Blob $Blob -Index $Index -StripLeadingZeros
+	Reads the ASN1 encoded item from the $Blob byte array, starting at index $Index.
+	The leading zeros in the result will be stripped.
 	#>
 
 	[CmdletBinding()]
 	Param(
 		[Byte[]] $Blob,
 		[Int] $Index = 0,
-		[Switch] $StripLeadingZeroes
+		[Switch] $StripLeadingZeros
 	)
 
 	Write-Debug "Read-ASN1Item Blob Length: $($Blob.Length), Index: $Index"
@@ -1367,7 +1321,7 @@ Function Read-ASN1Item {
 			$Size = $Size * 256 + ($Blob[($Index+=1)])
 		}
 	}
-	# If($StripLeadingZeroes){
+	# If($StripLeadingZeros){
 	# 	While($Blob[($Index+1)] -eq 0){ $Index++ }
 	# }
 	$Output.Value = $Blob[($Index+=1)..(($Index+=$Size)-1)]
@@ -1396,6 +1350,9 @@ Function ConvertFrom-LPEncryptedString {
 	If specified, this key will be used for decryption.
 	By default, the account key will be used.
 
+	.PARAMETER Base64
+	Whether the input is Base64 encoded
+
 	.EXAMPLE
 	ConvertFrom-LPEncryptedString -Value '!lks;jf90s|fsafj9#IOj893fj'
 	Decrypts the Lastpass encrypted input string
@@ -1403,6 +1360,11 @@ Function ConvertFrom-LPEncryptedString {
 	.EXAMPLE
 	$EncryptedAccounts.Name | ConvertFrom-LPEncryptedString
 	Decrypts the names of the accounts in the $EncryptedAccounts variable
+
+	.EXAMPLE
+	$Key = [Convert]::FromBase64String('Bg0kRH2p+IC4mjRHlNm/IyNnfudsEXaaPLgHDeU0NTs=')
+	'IVdYT0McSfObWOy68igNDsDDSoATbUwNSt/TFEMnu5hV' | ConvertFrom-LPEncryptedString -Key $Key -Base64
+	Decrypts the Base64 encoded encrypted string using the specified key
 	#>
 
 	Param (
@@ -1415,23 +1377,37 @@ Function ConvertFrom-LPEncryptedString {
 		[AllowEmptyString()]
 		[String[]] $Value,
 
-		[Byte[]] $Key
+		[Byte[]] $Key,
+
+		[Switch] $Base64
 	)
 
 	BEGIN {
 		If(!$Key -and !$Session.Key){ Throw 'No decryption key found.' }
 		$AES = [AesManaged]::New()
 		$AES.KeySize = 256
-		$AES.Key = $Session.Key
-		If($Key){
+		$AES.Key = If($Key){
 			Write-Debug ('Using custom key {0}...' -f ($Key[0..4] -join ','))
-			$AES.Key = $Key
+			$Key
 		}
+		Else{ $Session.Key }
 	}
 
 	PROCESS {
 		$Value | ForEach {
 			Write-Debug "Encrypted value: $_"
+
+			If($Base64){
+				$_ = If($_[0] -eq '!'){
+					'!{0}{1}' -f (
+						$_ -split '!' -split '\|' |
+							Select -Skip 1 |
+							ForEach { [Char[]][Convert]::FromBase64String($_) -join '' }
+					)
+				}
+				Else { [Char[]][Convert]::FromBase64String($_) -join '' }
+			}
+
 			If($_[0] -eq '!' -and
 			$_.Length -gt 32 -and
 			$_.Length % 16 -eq 1){
@@ -1446,7 +1422,6 @@ Function ConvertFrom-LPEncryptedString {
 				$Data = [char[]] $_
 				$AES.IV = [Byte[]] '0'*16
 			}
-
 			$AES | Out-String | Write-Debug
 			$Decryptor = $AES.CreateDecryptor()
 
@@ -1501,14 +1476,14 @@ Function ConvertTo-LPEncryptedString {
 	)
 
 	BEGIN {
-		If(!$Session.Key){ Throw 'Key not found. Please login using Connect-Lastpass.' }
+		If(!$Key -and !$Session.Key){ Throw 'No decryption key found.' }
 		$AES = [AesManaged]::New()
 		$AES.KeySize = 256
-		$AES.Key = $Session.Key
-		If($Key){
-			Write-Debug ('Using custom key {0}' -f ($Key[0..4] -join ','))
-			$AES.Key = $Key
+		$AES.Key = If($Key){
+			Write-Debug ('Using custom key {0}...' -f ($Key[0..4] -join ','))
+			$Key
 		}
+		Else{ $Session.Key }
 		$AES.Mode = [CipherMode]::CBC
 	}
 
@@ -1532,19 +1507,18 @@ Function ConvertTo-LPEncryptedString {
 Function ConvertFrom-Hex {
 	<#
 	.SYNOPSIS
-	 Short description
+	Decodes a hex string
 
-	.DESCRIPTION
-	Long description
-
-	.PARAMETER ParameterName
-	Parameter description
+	.PARAMETER Value
+	The hex encoded string
 
 	.EXAMPLE
-	ConvertFrom-Hex
+	ConvertFrom-Hex '56616C7565'
+	Decodes the hex string to 'Value'
 
 	.EXAMPLE
-	ConvertFrom-Hex
+	'506970656C696E6556616C7565' | ConvertFrom-Hex
+	Decodes the hex string to 'PipelineValue'
 	#>
 
 	[CmdletBinding()]
@@ -1627,6 +1601,17 @@ Function Set-ObjectMetadata {
 
 #FIXME! Remove; for debugging purposes only
 Function Get-Session {
+	<#
+	.SYNOPSIS
+	Returns a Lastpass session.
+	For Debugging purposes only.
+
+	.EXAMPLE
+	Get-Session
+	Gets the Lastpass session object
+
+	#>
+
 	Return [PSCustomObject] @{
 		PSTypeName = 'Lastpass.Session'
 		WebSession = $WebSession
@@ -1637,6 +1622,23 @@ Function Get-Session {
 
 
 Function Set-Session {
+	<#
+	.SYNOPSIS
+	Sets the Lastpass session
+	For debugging purposes only
+
+	.PARAMETER Session
+	The lastpass session oobject
+
+	.EXAMPLE
+	Set-Session $S
+	Sets the Lastpass session
+
+	.EXAMPLE
+	$S | Set-Session
+	Sets the Lastpass session
+	#>
+
 	Param(
 		[Parameter(
 			Mandatory,

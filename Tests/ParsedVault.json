@@ -198,7 +198,7 @@
     {
       "ID": "3365236279341564432",
       "Name": "test",
-      "Group": "(none)",
+      "Group": null,
       "URL": "http://sn",
       "Note": "!öG¥PÛ\nï`oM¿ñÂ|gaw5\u0006\u001cõèo}G`ó3\u001d",
       "favorite": false,

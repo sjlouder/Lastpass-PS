@@ -266,7 +266,7 @@ InModuleScope Lastpass {
 			CommandName = 'Invoke-RestMethod'
 			ParameterFilter = { $URI -eq 'https://lastpass.com/getaccts.php'}
 		}
-		Mock @DownloadMockParam { 
+		Mock @DownloadMockParam {
 			[Char[]][Convert]::FromBase64String((Get-Content $ScriptRoot/Vault)) -join ''
 		}
 
@@ -303,6 +303,17 @@ InModuleScope Lastpass {
 					}Else{ $Account.$_ | Should -Be $Reference.$_ }
 				}
 			}
+		}
+		$Account = $Blob.Accounts | Where ID -eq '1835977081662683158'
+
+		It 'Transforms the last modification timestamp to a DateTime object' {
+			$Account.LastModifiedGMT | Should -BeOfType DateTime
+			$Account.LastModifiedGMT | Should -Be ([DateTime] '08/15/2019 4:42:38 AM')
+		}
+
+		It 'Transforms the last access timestamp as a DateTime object' {
+			$Account.LastAccessed | Should -BeOfType DateTime
+			$Account.LastAccessed | Should -Be ([DateTime] '01/25/2019 3:09:08 AM')
 		}
 
 		It 'Parses and decrypts the secure notes' {
@@ -390,12 +401,11 @@ InModuleScope Lastpass {
 		$Result = Get-Account
 
 		It 'Returns all accounts if no account name is specified' {
-			$Result.Count | Should -Be 6
+			$Result.Count | Should -Be 5
 			@(
 				@{ ID = '1835977081662683158'; Name = 'Account1' }
 				@{ ID = '5148901049320353252'; Name = 'Account2' }
 				@{ ID = '3656362581793908418'; Name = 'SiteShareTest' }
-				@{ ID = '5529670392262189424'; Name = 'ShareAccount' }
 				@{ ID = '3524762968710500297'; Name = 'ShareAccount1' }
 				@{ ID = '6274670822055333050'; Name = 'TestName#$/3' }
 			) | ForEach {
@@ -414,6 +424,10 @@ InModuleScope Lastpass {
 			$Result.Count | Should -Be 1
 		}
 
+		It 'Returns a Lastpass Account Object' {
+			$Result | Should -BeOfType "PSCustomObject('Lastpass.Account')"
+		}
+
 		It 'Decrypts the folder' {
 			$Result.Group | Should -Be 'ParentFolder'
 		}
@@ -422,18 +436,8 @@ InModuleScope Lastpass {
 			$Result.Username | Should -Be 'ThisIsTheUsername'
 		}
 
-		It 'Decrypts the note content' {
+		It 'Decrypts the note content' -skip {
 			$Result.Notes | Should -Be 'These are arbitrary Notes attached to the Account'
-		}
-
-		It 'Exposes the last modification timestamp as a DateTime object' {
-			$Result.LastModified | Should -BeOfType DateTime
-			$Result.LastModified | Should -Be ([DateTime] '01/25/19 3:09:08 AM')
-		}
-
-		It 'Exposes the last access timestamp as a DateTime object' {
-			$Result.LastAccessed | Should -BeOfType DateTime
-			# $Result.LastAccessed | Should -Be ([DateTime] '1/25/19 3:09:08 AM')
 		}
 
 		It 'Updates the LastAccessed time' {
@@ -450,7 +454,6 @@ InModuleScope Lastpass {
 		It 'Accepts pipeline input' {
 			$Result = 'Account1' | Get-Account
 			$Result.ID | Should -Be 1835977081662683158
-			$Result | Should -BeOfType 'Lastpass.Account'
 		}
 
 		It 'Prompts for master password if account is password protected' {
@@ -522,7 +525,7 @@ InModuleScope Lastpass {
 	Describe Get-Note {
 
 		BeforeAll {
-			$Script:Blob = ([XML] (Get-Content $ScriptRoot/Vault.xml)).Response
+			$Script:Blob = Get-Content $ScriptRoot/ParsedVault.json | ConvertFrom-Json
 			$Script:Session = [PSCustomObject] @{
 				Key = [Byte[]] @(
 					160,143,117,193,122,157,146,7,23,206,62,167,167,182,117,117,
@@ -531,9 +534,6 @@ InModuleScope Lastpass {
 				Username = 'Username'
 				Iterations = '1'
 			}
-			$Script:Blob.Accounts.Account | ForEach {
-				$_.SetAttribute('name', (ConvertFrom-LPEncryptedString $_.Name))
-			}
 		}
 
 		$Result = Get-Note
@@ -541,8 +541,8 @@ InModuleScope Lastpass {
 		It 'Returns a list of all note IDs and names if no name is specified' {
 			$Result.Count | Should -Be 2
 			@(
-				@{ ID = '7747528438954943634'; Name = 'SecureNote1' }
-				@{ ID = '1439364932042364774'; Name = 'Note In Folder' }
+				@{ ID = '3365236279341564432'; Name = 'test' }
+				@{ ID = '8526543329769000462'; Name = 'Note In Folder' }
 			) | ForEach {
 				$Item = $_
 				$Result | Where {
@@ -553,18 +553,18 @@ InModuleScope Lastpass {
 
 		}
 
-		$Result = Get-Note 'Note In Folder'
+		$Result = Get-Note 'test'
 		$Now = [DateTime]::Now
 
 		It 'Returns a note by name' {
 			$Result.Count | Should -Be 1
 		}
 
-		It 'Decrypts the folder' {
-			$Result.Folder | Should -Be 'Productivity Tools\TestFolderName'
+		It 'Returns a Lastpass Note Object' {
+			$Result | Should -BeOfType "PSCustomObject('Lastpass.SecureNote')"
 		}
 
-		It 'Decrypts the note content' {
+		It 'Decrypts the note content' -skip {
 			$Result.Content | Should -Be (
 				"NoteType:Server`n" +
 				"Hostname:Server Note`n" +
@@ -572,15 +572,6 @@ InModuleScope Lastpass {
 				"Password:SuperSecurePassword`n" +
 				"Notes:Abitrary notes of the secure note"
 			)
-		}
-
-		It 'Exposes the last modification timestamp as a DateTime object' {
-			$Result.LastModified | Should -BeOfType DateTime
-			$Result.LastModified | Should -Be ([DateTime] '3/26/19 12:04:29 AM')
-		}
-
-		It 'Exposes the last access timestamp as a DateTime object' {
-			$Result.LastAccessed | Should -BeOfType DateTime
 		}
 
 		It 'Updates the LastAccessed time' {
@@ -612,10 +603,11 @@ InModuleScope Lastpass {
 
 	}
 
+	#TODO: Move Account/Note tests here
 	Describe Get-Item {
 
 		BeforeAll {
-			$Script:Blob = ([XML] (Get-Content $ScriptRoot/Vault.xml)).Response
+			$Script:Blob = Get-Content $ScriptRoot/ParsedVault.json | ConvertFrom-Json
 			$Script:Session = [PSCustomObject] @{
 				Key = [Byte[]] @(
 					160,143,117,193,122,157,146,7,23,206,62,167,167,182,117,117,
@@ -623,9 +615,6 @@ InModuleScope Lastpass {
 				)
 				Username = 'Username'
 				Iterations = '1'
-			}
-			$Script:Blob.Accounts.Account | ForEach {
-				$_.SetAttribute('name', (ConvertFrom-LPEncryptedString $_.Name))
 			}
 		}
 
@@ -637,13 +626,12 @@ InModuleScope Lastpass {
 		Get-Item -Type Note
 		Get-Item 'Note'
 
-
 	}
 
 	Describe Set-Item {
 
 		BeforeAll {
-			$Script:Blob = ([XML] (Get-Content $ScriptRoot/Vault.xml)).Response
+			$Script:Blob = Get-Content $ScriptRoot/ParsedVault.json | ConvertFrom-Json
 			$Script:Session = [PSCustomObject] @{
 				Key = [Byte[]] @(
 					160,143,117,193,122,157,146,7,23,206,62,167,167,182,117,117,
@@ -651,9 +639,6 @@ InModuleScope Lastpass {
 				)
 				Username = 'Username'
 				Iterations = '1'
-			}
-			$Script:Blob.Accounts.Account | ForEach {
-				$_.SetAttribute('name', (ConvertFrom-LPEncryptedString $_.Name))
 			}
 		}
 
@@ -729,32 +714,32 @@ InModuleScope Lastpass {
 
 		It 'Encrypts the Account Name' {
 			Assert-MockCalled Invoke-RestMethod -ParameterFilter {
-				($Body.Name | ConvertFrom-LPEncryptedString) -eq $Account.Name
+				($Body.Name | ConvertFrom-LPEncryptedString -Base64) -eq $Account.Name
 			}
 		}
 
 		It 'Encrypts the Username' {
 			Assert-MockCalled Invoke-RestMethod -ParameterFilter {
-				($Body.UserName | ConvertFrom-LPEncryptedString) -eq 'NewUsername'
+				($Body.UserName | ConvertFrom-LPEncryptedString -Base64) -eq 'NewUsername'
 			}
 		}
 
 		It 'Encrypts the Password' {
 			Assert-MockCalled Invoke-RestMethod -ParameterFilter {
-				($Body.Password | ConvertFrom-LPEncryptedString) -eq 'newPassword'
+				($Body.Password | ConvertFrom-LPEncryptedString -Base64) -eq 'newPassword'
 			}
 		}
 
 		It 'Encrypts the folder' {
 			Assert-MockCalled Invoke-RestMethod -ParameterFilter {
-				($Body.Grouping | ConvertFrom-LPEncryptedString) -eq $Account.Folder
+				($Body.Grouping | ConvertFrom-LPEncryptedString -Base64) -eq $Account.Folder
 			}
 
 		}
 
 		It 'Encrypts the note content' {
 			Assert-MockCalled Invoke-RestMethod -ParameterFilter {
-				($Body.Extra | ConvertFrom-LPEncryptedString) -eq $Account.Notes
+				($Body.Extra | ConvertFrom-LPEncryptedString -Base64) -eq $Account.Notes
 			}
 
 		}
@@ -842,18 +827,18 @@ InModuleScope Lastpass {
 			@{
 				Encrypted = 'BNhd3Q3ZVODxk9c0C788NUPTIfYnZuxXfkghtMJ8jVM='
 				Decrypted = 'All your base are belong to us'
-				Mode = 'ECB' #Base64
+				Mode = 'ECB'
 			}
 			@{
 				Encrypted = "!YFuiAVZgOD2K+s6y8yaMOw==|TZ1+if9ofqRKTatyUaOnfudletslMJ/RZyUwJuR/+aI="
 				Decrypted = "All your base are belong to us"
-				Mode = 'CBC' #Base64
+				Mode = 'CBC'
 			}
-			# @{
-			# 	Encrypted = "IcokDWmjOkKtLpZehWKL6666Uj6fNXPpX6lLWlou+1Lrwb+D3ymP6BAwd6C0TB3hSA=="
-			# 	Decrypted = "All your base are belong to us"
-			# 	Mode = 'CBC' #Base64
-			# }
+			@{
+				Encrypted = "IcokDWmjOkKtLpZehWKL6666Uj6fNXPpX6lLWlou+1Lrwb+D3ymP6BAwd6C0TB3hSA=="
+				Decrypted = "All your base are belong to us"
+				Mode = 'CBC'
+			}
 			@{
 				Encrypted = "8mHxIA8rul6eq72a/Gq2iw=="
 				Decrypted = "0123456789"
@@ -864,11 +849,11 @@ InModuleScope Lastpass {
 				Decrypted = '0123456789'
 				Mode = 'CBC'
 			}
-			# @{
-			# 	Encrypted = 'IQ+hiIy0vGG4srsHmXChe3ehWc/rYPnfiyqOG8h78DdX'
-			# 	Decrypted = '0123456789'
-			# 	Mode = 'CBC'
-			# }
+			@{
+				Encrypted = 'IQ+hiIy0vGG4srsHmXChe3ehWc/rYPnfiyqOG8h78DdX'
+				Decrypted = '0123456789'
+				Mode = 'CBC'
+			}
 		)
 		It 'Secret: "<Decrypted>"; Encoding <mode>' -TestCases $TestCases {
 			Param(
@@ -878,7 +863,15 @@ InModuleScope Lastpass {
 				[String] $Decrypted,
 				[String] $Mode
 			)
-			ConvertFrom-LPEncryptedString $Encrypted | Should -Be $Decrypted
+
+			$Encrypted | ConvertFrom-LPEncryptedString -Base64 | Should -Be $Decrypted
+		}
+
+		It 'Uses the specified key if passed' {
+			$Key = [Convert]::FromBase64String('Bg0kRH2p+IC4mjRHlNm/IyNnfudsEXaaPLgHDeU0NTs=')
+
+			'IVdYT0McSfObWOy68igNDsDDSoATbUwNSt/TFEMnu5hV' |
+				ConvertFrom-LPEncryptedString -Key $Key -Base64 | Should -Be 'passw'
 		}
 
 		It 'Throws when invalid data is passed' {
@@ -889,7 +882,7 @@ InModuleScope Lastpass {
 			$Session.Key = $Null
 
 			{ConvertFrom-LPEncryptedString 'AnythingHere'} |
-				Should -Throw 'Key not found. Please login using Connect-Lastpass.'
+				Should -Throw 'No decryption key found.'
 		}
 	}
 
@@ -911,8 +904,15 @@ InModuleScope Lastpass {
 				[String] $Secret
 			)
 
-			$Secret | ConvertTo-LPEncryptedString | ConvertFrom-LPEncryptedString |
+			$Secret | ConvertTo-LPEncryptedString | ConvertFrom-LPEncryptedString -Base64 |
 				Should -Be $Secret
+		}
+
+		It 'Uses the specified key if passed' {
+			$Key = [Convert]::FromBase64String('Bg0kRH2p+IC4mjRHlNm/IyNnfudsEXaaPLgHDeU0NTs=')
+
+			'test' | ConvertTo-LPEncryptedString -Key $Key | ConvertFrom-LPEncryptedString -Key $Key -Base64 |
+				Should -Be 'test'
 		}
 
 		It 'Generates a different IV each time' {
@@ -921,8 +921,8 @@ InModuleScope Lastpass {
 			$Result2 = $String | ConvertTo-LPEncryptedString
 
 			$Result1[1..24] | Should -Not -Be $Result2[1..24]
-			$Result1 | ConvertFrom-LPEncryptedString |
-				Should -Be ($Result2 | ConvertFrom-LPEncryptedString)
+			$Result1 | ConvertFrom-LPEncryptedString -Base64 |
+				Should -Be ($Result2 | ConvertFrom-LPEncryptedString -Base64)
 		}
 
 		It 'Outputs the string in the correct format' {
@@ -934,7 +934,7 @@ InModuleScope Lastpass {
 			$Session.Key = $Null
 
 			{ConvertTo-LPEncryptedString 'AnythingHere'} |
-				Should -Throw 'Key not found. Please login using Connect-Lastpass.'
+				Should -Throw 'No decryption key found.'
 		}
 
 	}
@@ -947,6 +947,7 @@ Describe 'Documentation Tests' -Tag Documentation {
 
 			It 'Has a synopsis' {
 				$_.Synopsis | Should -Not -BeNullOrEmpty
+				$_.Synopsis | Should -Not -MatchExactly ('^\s{0}\s$' -f $_.Name)
 				$_.Synopsis | Should -Not -Be 'Short description'
 			}
 
