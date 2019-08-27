@@ -171,73 +171,10 @@ Function Connect-Lastpass {
 
 	#TODO: Change this to While($Response.Error)?
 	If($Response.Error){
-		"Error received:`n{0}" -f $Response.Error.OuterXML | Write-Debug
+		'Error received:`n{0}' -f $Response.Error | Write-Debug
 		Switch -Regex ($Response.Error.Cause){
-			OutOfBandRequired {
-				#TODO
-				#$Response.Error.OutOfBandType
-				#Return $Response
-				$Type = $Response.Error.OutOfBandName
-				$Capabilities = $Response.Error.Capabilities -split ','
-				If(!$Type -or !$Capabilities){ Throw 'Could not determine out-of-band type' }
-
-				$Param.Body.outofbandrequest = 1
-				$Prompt = "Complete multifactor authentication through $Type"
-				If($Capabilities -contains 'Passcode' -and $Interactive -and !$OneTimePassword ){
-					$Prompt += ' or enter a one time passcode: '
-					Write-Host -NoNewLine $Prompt
-					Do {
-						$Response = (Invoke-RestMethod @Param).Response
-						If($Response.Error.Cause -eq 'OutOfBandRequired'){
-							$Param.Body.outofbandretry = 1
-							$Param.Body.outofbandretryid = $Response.Error.RetryID
-
-							While([Console]::KeyAvailable){
-								$Input = [Console]::ReadKey($True)
-								Write-Debug ("Key: {0} {1}" -f $Input.Key, ($Input.Key -eq 'Enter'))
-								If( $Input.Key -eq 'Enter' ){
-									Write-Debug $OneTimePassword
-									$Param2 = $Param.Clone()
-									$Param2.Body.outofbandrequest = 0
-									$Param2.Body.outofbandretry = 0
-									$Param2.Body.outofbandretryid = ''
-									$Param2.Body.otp = $OneTimePassword
-									$Param2.Body | Out-String | Write-Debug
-									$Response = (Invoke-RestMethod @Param2).Response
-									$OneTimePassword = $Null
-									Break
-								}
-								$OneTimePassword += $Input.KeyChar
-							}
-						}
-						ElseIf($Response.Error.Cause -eq 'MultiFactorResponseFailed'){
-							Throw $Response.Error.Message
-						}
-						Start-Sleep 1
-					}Until($Response.OK)
-				}
-				ElseIf($Capabilities -notcontains 'Passcode' -or !$Interactive){
-					Write-Host -NoNewLine $Prompt
-					Do {
-						$Response = (Invoke-RestMethod @Param).Response
-						If($Response.Error.Cause -eq 'OutOfBandRequired'){
-							$Param.Body.outofbandretry = 1
-							$Param.Body.outofbandretryid = $Response.Error.RetryID
-						}
-						ElseIf($Response.Error.Cause -eq 'MultiFactorResponseFailed'){
-							Throw $Response.Error.Message
-						}
-						Start-Sleep 1
-					}Until($Response.OK)
-
-				}
-			}
-			{$_ -in 'GoogleAuthRequired', 'OTPRequired' -or ($_ -eq 'OutOfBandRequired' -and $OneTimePassword)} {
+			'googleauthrequired|otprequired' {
 				If(!$OneTimePassword){
-					If(!$Interactive){
-						Throw ('Powershell is running in noninteractive mode. ' +
-							'Enter the one time password via the -OneTimePassword parameter.')
-					}
 					$OneTimePassword = Read-Host 'Enter multifactor authentication code'
 				}
 				$Param.Body.otp = $OneTimePassword
@@ -245,12 +182,17 @@ Function Connect-Lastpass {
 
 				# TODO: Error checking
 				#'multifactorresponsefailed'
+				Break
+			}
+			'outofbandrequired' {
+				#TODO
+				#$Response.Error.OutOfBandType
+				Break
 			}
 			#'verifydevice' -> Default: Throw message
-			# Parse custombutton and customaction attributes
 			Default { Throw $Response.Error.Message }
 		}
-	}
+}
 	$Response.OK | Out-String | Write-Debug
 	If(!$Response.OK){ Throw 'Login unsuccessful' }
 
