@@ -297,11 +297,13 @@ InModuleScope Lastpass {
 				Compare-Object $Reference.PSObject.Properties $Account.PSObject.Properties -Property Name |
 					Should -BeNullOrEmpty
 
-				$Account.PSObject.Properties.Name | ? {$_ -notin 'Password', 'Note', 'Group'} | ForEach {
-					If($Account.$_ -is [DateTime]){
-						$Account.$_.DateTime | Should -Be ($Epoch.AddSeconds([Int]$Reference.$_).DateTime)
-					}Else{ $Account.$_ | Should -Be $Reference.$_ }
-				}
+				$Account.PSObject.Properties.Name |
+					Where {$_ -notin 'Password', 'Note', 'Group', 'Credential'} |
+					ForEach {
+						If($Account.$_ -is [DateTime]){
+							$Account.$_.DateTime | Should -Be ($Epoch.AddSeconds([Int]$Reference.$_).DateTime)
+						}Else{ $Account.$_ | Should -Be $Reference.$_ }
+					}
 			}
 		}
 		$Account = $Blob.Accounts | Where ID -eq '1835977081662683158'
@@ -370,6 +372,11 @@ InModuleScope Lastpass {
 					}Else{ $Folder.$_ | Should -Be $Reference.$_ }
 				}
 			}
+		}
+
+		It 'Creates a PSCredential property' {
+			$Account.Credential | Should -Not -BeNullOrEmpty
+			$Account.Credential | Should -BeOfType PSCredential
 		}
 
 		It 'Outputs a Lastpass.Sync object' {}
@@ -973,6 +980,41 @@ Describe 'Documentation Tests' -Tag Documentation {
 					$_.Examples.Example | ForEach {
 						$_.Remarks.Text[0] | ForEach {$_ | Should -Not -BeNullOrEmpty}
 					}
+				}
+			}
+		}
+	}
+}
+
+Describe 'TypeData' {
+	@{
+		'Lastpass.Account' = @(
+			'Name'
+			'Username'
+			'Folder'
+			'Favorite'
+		)
+		'Lastpass.SecureNote' = @(
+			'Name'
+			'Folder'
+			'Favorite'
+		)
+		'Lastpass.Folder' = @(
+			'Name'
+			'LastModifiedGMT'
+			'LastPasswordChange'
+		)
+		'Lastpass.SharedFolder' = @(
+			'Name'
+			'ReadOnly'
+		)
+	}.GetEnumerator() | ForEach {
+		Describe $_.Key {
+			$DisplayProperties = (Get-TypeData $_.Key).DefaultDisplayPropertySet.ReferencedProperties
+
+			$_.Value | ForEach {
+				It "Displays $_ by default" {
+					$_ | Should -BeIn $DisplayProperties
 				}
 			}
 		}

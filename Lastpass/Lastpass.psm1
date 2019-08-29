@@ -66,14 +66,18 @@ $Script:Schema = @{
 			'Favorite'
 		)
 	}
-	Note = @{
-		Fields = [Ordered] @{
-
-		}
+	SecureNote = @{
 		DefaultFields = @(
 			'Name'
 			'Folder'
 			'Favorite'
+		)
+	}
+	Folder = @{
+		DefaultFields = @(
+			'Name'
+			'LastModifiedGMT'
+			'LastPasswordChange'
 		)
 	}
 	SharedFolder = @{
@@ -86,11 +90,15 @@ $Script:Schema = @{
 			AESFolderKey = 'Skip'
 		}
 		DefaultFields = @(
-
+			'Name'
+			'ReadOnly'
 		)
 	}
 }
 
+$Schema.GetEnumerator() | ForEach {
+	Update-TypeData -TypeName "Lastpass.$($_.Key)" -DefaultDisplayPropertySet $_.Value.DefaultFields -Force
+}
 
 $Script:Session
 $Script:Blob
@@ -403,23 +411,23 @@ Function Sync-Lastpass {
 					'http://sn' {
 						Write-Debug 'Item is Secure note'
 						$Blob.SecureNotes += [PSCustomObject] @{
-							PSTypeName = 'Lastpass.SecureNote'
-							ID = $Account.ID
-							Name = $Account.Name
-							Group = $Account.Group
-							NoteType = $Account.NoteType
-							Note = $Account.Note
-							AttachmentPresent = $Account.AttachmentPresent
-							EncryptedAttachmentKey = $Account.EncryptedAttachmentKey
-							PasswordProtect = $Account.PasswordProtect
-							Favorite = $Account.Favorite
-							Deleted = $Account.Deleted
-							HasBeenShared = $Account.HasBeenShared
-							FIID = $Account.FIID
-							DateCreated = $Account.DateCreated
-							LastAccess = $Account.LastModified
-							LastPasswordChange = $Account.LastPasswordChange
-							LastModifiedGMT = $Account.LastModifiedGMT
+							PSTypeName				= 'Lastpass.SecureNote'
+							ID						= $Account.ID
+							Name					= $Account.Name
+							Group					= $Account.Group
+							NoteType				= $Account.NoteType
+							Note					= $Account.Note
+							AttachmentPresent		= $Account.AttachmentPresent
+							EncryptedAttachmentKey	= $Account.EncryptedAttachmentKey
+							PasswordProtect			= $Account.PasswordProtect
+							Favorite				= $Account.Favorite
+							Deleted					= $Account.Deleted
+							HasBeenShared			= $Account.HasBeenShared
+							FIID					= $Account.FIID
+							DateCreated				= $Account.DateCreated
+							LastAccess				= $Account.LastModified
+							LastPasswordChange		= $Account.LastPasswordChange
+							LastModifiedGMT			= $Account.LastModifiedGMT
 						}
 					}
 					'http://group' {
@@ -434,7 +442,18 @@ Function Sync-Lastpass {
 							LastModifiedGMT		= $Account.LastModifiedGMT
 						}
 					}
-					Default { $Blob.Accounts += [PSCustomObject] $Account }
+					Default {
+						$Credential = @{ Username = $Account.Username }
+						If($Account.Password){
+							$Credential.Password = [SecureString] (
+								$Account.Password | ConvertTo-SecureString -AsPlainText -Force
+							)
+						}
+						Else{ $Credential.Password = [SecureString]::Empty }
+
+						$Account.Credential = [PSCredential]::New([PSCustomObject] $Credential)
+						$Blob.Accounts += [PSCustomObject] $Account
+					}
 				}
 
 				Write-Debug "END ACCOUNT DECODE"
@@ -1480,62 +1499,6 @@ Function ConvertFrom-Hex {
 			If($_){ [Char][Convert]::ToByte($_,16) }
 		}) -join ''
 	}
-
-}
-
-
-Function Set-ObjectMetadata {
-	<#
-	.SYNOPSIS
-	Sets object type name and default display properties
-
-	.PARAMETER TypeName
-	The PSTypeName to assign to the object
-
-	.PARAMETER DefaultDisplayProperties
-	The properties to show for default output of the object
-
-	.PARAMETER InputObject
-	The object to set the type name and default display properties
-
-	.EXAMPLE
-	Set-ObjectMetadata $Object 'Type.Name' 'ID','Name','Value'
-	Sets the PSTypeName to 'Type.Name' and the default display
-	properties to the ID, name, and value properties
-
-	.EXAMPLE
-	$Object | Set-Object -TypeName 'Type.Name' -DefaultDisplayProperties @('ID','User')
-	Sets the PSTypeName to 'Type.Name' and the default display
-	properties to the ID and user properties. This example shows
-	passing the object through the pipeline
-	#>
-
-	[CmdletBinding()]
-	Param(
-		[Parameter(Mandatory)]
-		[String] $TypeName,
-
-		[Parameter(Mandatory)]
-		[String[]] $DefaultDisplayProperties,
-
-		[Parameter(Mandatory, ValueFromPipeline)]
-		[PSCustomObject] $InputObject
-
-	)
-
-	$InputObject.PSTypeNames[0] = "Lastpass.$TypeName"
-
-	$Param = @{
-		MemberType	= 'MemberSet'
-		Name		= 'PSStandardMembers'
-		Passthru	= $True
-		Value		= [Management.Automation.PSPropertySet]::New(
-							'DefaultDisplayPropertySet',
-							[String[]] $DefaultDisplayProperties
-						)
-	}
-
-	$InputObject | Add-Member @Param
 
 }
 
