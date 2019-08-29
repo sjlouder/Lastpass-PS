@@ -3,16 +3,14 @@ Lastpass Powershell Module
 
 [![Build Status](https://dev.azure.com/sacrificialarts/sacrificialarts/_apis/build/status/sjlouder.Lastpass-PS?branchName=master)](https://dev.azure.com/sacrificialarts/sacrificialarts/_build/latest?definitionId=1&branchName=master)
 
-DESCRIPTION
-=======
+# DESCRIPTION
 Powershell module to interact with Lastpass.
  
 Built on pure Powershell/.NET core, designed to work without any other external dependencies to maximize cross platform portability.
 
 Based on [lastpass-cli](https://github.com/lastpass/lastpass-cli) and [lastpass-sharp](https://github.com/detunized/lastpass-sharp).
 
-EXAMPLE
----
+# EXAMPLE
 ```
 # Prompts for credentials
 Connect-Lastpass
@@ -38,8 +36,7 @@ $GmailAccount | Set-Account -PasswordProtect
 For more examples, check Tests/Lastpass.Tests.ps1.
 
 
-STATUS AND FEATURES
----
+# STATUS AND FEATURES
 This project is in early stages and is not production ready. Logging in, getting the account data, and decrypting non shared fields has been implemented. Basic account and note updating has been implemented, but is not heavily tested.
 **Create backup copies of your data before using this project to make any modifications.**
 
@@ -47,6 +44,7 @@ Currently supported:
 * Login
 	* App OTP MFA
 * Get and decrypt accounts and notes
+	* Supports shared accounts and notes
 	* Supports password protection
 * Update accounts and notes
 	* **WARNING**: Not fully tested
@@ -67,7 +65,7 @@ Planned:
 	* Yubikey
 	* Sesame
 * Folders support
-	* Create/read/update/delete
+	* Create/update/delete
 	* Move
 	* Un/share
 	* Manage sharing
@@ -91,18 +89,15 @@ Ideas:
 	* MFA settings
 
 
-INSTALLING
----
+# INSTALLING
 Currently: download; Import-Module /Path/To/Lastpass-PS/Lastpass
 
 Eventually: Install-Module Lastpass #From Powershell Gallery
 
-CONTRIBUTING
----
+# CONTRIBUTING
 TODO
 See Contribute wiki page.
 Tests (Pester/TDD), Design (Powershell/.NET core base)
 
-LICENSE
----
+# LICENSE
 GPLv2+. See LICENSE file for details
