@@ -8,9 +8,6 @@ InModuleScope Lastpass {
 	# Make sure no tests actually reach out to the internet
 	Mock Invoke-RestMethod
 
-	# Make sure no tests actually reach out to the internet
-	Mock Invoke-RestMethod
-
 	Describe Connect-Lastpass {
 
 		# Catch all mock to make sure tests don't reach out to the internet
@@ -45,9 +42,7 @@ InModuleScope Lastpass {
 		}
 		Mock @LoginMockParam
 
-		Mock Sync-Lastpass {
-			[XML] (Get-Content "$ScriptRoot/Vault.xml").Response
-		}
+		Mock Sync-Lastpass
 
 		$Credential = [PSCredential]::New(
 			'Username',
@@ -231,12 +226,13 @@ InModuleScope Lastpass {
 
 			$OOBEnabledMockParam = @{
 				CommandName = 'Invoke-RestMethod'
-				ParameterFilter = { 
+				ParameterFilter = {
 					$URI -eq 'https://lastpass.com/login.php' -and
-					!$Body.OutOfBandRequest
+					!$Body.ContainsKey('outofbandrequest')
 				}
 			}
 			Mock @OOBEnabledMockParam {
+				$Body | Out-String | Write-Host
 				Return [PSCustomObject] @{
 					Response = [PSCustomObject] @{
 						Error = [PSCustomObject] @{
@@ -250,7 +246,7 @@ InModuleScope Lastpass {
 
 			$OOBPollMockParam = @{
 				CommandName = 'Invoke-RestMethod'
-				ParameterFilter = { 
+				ParameterFilter = {
 					$URI -eq 'https://lastpass.com/login.php' -and
 					$Body.outofbandrequest
 				}
@@ -260,7 +256,7 @@ InModuleScope Lastpass {
 					Cause = 'OutOfBandRequired'
 					OutOfBandName = 'Duo Security'
 				}
-				If($Body.outofbandretryid -eq $Null){
+				If(!$Body.ContainsKey('outofbandretryid')){
 					$Error.RetryID = 0
 				}
 				ElseIf($Body.outofbandretryid -eq 3){
@@ -270,7 +266,7 @@ InModuleScope Lastpass {
 								UID				= '123456789'
 								SessionID		= 'SessionIDHere1232'
 								Token			= 'TokenHere12332o432i432'
-								PrivateKeyEnc	= 'TestPrivateKey0-324irfk49-'
+								#PrivateKeyEnc	= 'TestPrivateKey0-324irfk49-'
 								Iterations		= '100100'
 								Username		= 'Username'
 							}
@@ -294,12 +290,13 @@ InModuleScope Lastpass {
 
 			It 'Attempts to log in normally' {
 				Assert-MockCalled Invoke-RestMethod -ParameterFilter {
-					$URI -eq 'https://lastpass.com/login.php' -and !$Body.ContainsKey('outofbandrequest')
+					$URI -eq 'https://lastpass.com/login.php' -and
+					!$Body.ContainsKey('outofbandrequest')
 				}
 			}
 
 			It 'Prompts user to complete OOB authentication' {
-				Assert-MockCalled Write-Host -ParameterFilter { 
+				Assert-MockCalled Write-Host -ParameterFilter {
 					$Object -eq 'Complete multifactor authentication through Duo Security'
 				}
 			}
@@ -326,8 +323,8 @@ InModuleScope Lastpass {
 
 				$OTPLoginMockParam = @{
 					CommandName = 'Invoke-RestMethod'
-					ParameterFilter = { 
-						$URI -eq 'https://lastpass.com/login.php' -and 
+					ParameterFilter = {
+						$URI -eq 'https://lastpass.com/login.php' -and
 						$Body.OTP
 					}
 				}
@@ -336,10 +333,13 @@ InModuleScope Lastpass {
 						Response = [PSCustomObject] @{
 							OK = [PSCustomObject] @{
 								UID				= '123456789'
-								SessionID		= 'uu4fdsu9fsDFad9WufdFEsaUUFD'
-								Token			= 'MTU0ODA0OTkxNi45MzMxLbu/wlKm16H07pJsq3q4UACWuqmr0nT+8msPiVgK4/Jv'
-								PrivateKeyEnc	= 'TestPrivateKey'
-							}
+								SessionID		= 'SessionIDHere1232'
+								Token			= 'TokenHere12332o432i432'
+								#FIXME: This needs to be the actual value
+								#PrivateKeyEnc	= 'TestPrivateKey0-324irfk49-'
+								Iterations		= '100100'
+								LPUsername		= 'Username'
+								}
 						}
 					}
 				}
@@ -347,9 +347,9 @@ InModuleScope Lastpass {
 				Connect-Lastpass -Credential $Credential | Out-Null
 
 				It 'prompts to complete OOB authentication or enter one time password' {
-					Assert-MockCalled Write-Host -ParameterFilter { 
+					Assert-MockCalled Write-Host -ParameterFilter {
 						$NoNewLine -and
-						$Object -eq ('Complete multifactor authentication through ' + 
+						$Object -eq ('Complete multifactor authentication through ' +
 									'Duo Security or enter a one time passcode: ')
 					}
 				}
@@ -365,11 +365,11 @@ InModuleScope Lastpass {
 
 				It 'Uses the $OneTimePassword parameter if supplied' {
 					Connect-Lastpass -Credential $Credential -OneTimePassword '12312312' | Out-Null
-						
+
 					# Assert-MockCalled @OOBEnabledMockParam
 
-					Assert-MockCalled Invoke-RestMethod -ParameterFilter { 
-						$URI -eq 'https://lastpass.com/login.php' -and 
+					Assert-MockCalled Invoke-RestMethod -ParameterFilter {
+						$URI -eq 'https://lastpass.com/login.php' -and
 						$Body.OTP -eq '12312312'
 					}
 				}
@@ -637,46 +637,6 @@ InModuleScope Lastpass {
 	}
 
 	Describe Set-Account {
-		
-		Mock Set-Item
-
-		$Account = [PSCustomObject] @{
-			ID           = '5148901049320353252'
-			Name         = 'sitename'
-			URL          = 'http://url.com'
-			Folder       = 'NewFolder1\NewFolder2'
-			Username     = 'usernamehere2'
-			Credential   = [PSCredential]::New(
-								'usernamehere2',
-								(ConvertTo-SecureString -A -F 'fdsafdasfda')
-							)
-			Notes        = 'notecontent3'
-			Favorite     = $False
-			LastModified = [DateTime] '4/3/19 4:58:05 AM'
-			LastAccessed = [DateTime] '4/4/19 1:42:48 AM'
-			LaunchCount  = 0
-			Bookmark     = $False
-			Password     = 'fdsafdasfda'
-		}
-
-		$Account | Set-Account
-		It 'Calls Set-Item with the parameters passed to it' {
-			Assert-MockCalled Set-Item -ParameterFilter {
-				$ID			-eq '5148901049320353252' -and
-				$Name		-eq 'sitename' -and
-				$Folder		-eq 'NewFolder1\NewFolder2' -and
-				$URL		-eq 'http://url.com' -and
-				$Username	-eq 'usernamehere2' -and
-				$Password	-eq 'fdsafdasfda' -and
-				$Notes		-eq 'notecontent3' -and
-				!$Favorite	-and
-				!$AutoLogin	-and
-				!$DisableAutofill
-			}
-		}
-	}
-
-	Describe Get-Note {
 
 		Mock Set-Item
 
@@ -883,127 +843,6 @@ InModuleScope Lastpass {
 				)
 				Username = 'Username'
 				Iterations = '1'
-			}
-		}
-
-		$Result = Get-Note
-
-		It 'Returns a list of all note IDs and names if no name is specified' {
-			$Result.Count | Should -Be 2
-			@(
-				@{ ID = '7747528438954943634'; Name = 'SecureNote1' }
-				@{ ID = '1439364932042364774'; Name = 'Note In Folder' }
-			) | ForEach {
-				$Item = $_
-				$Result | Where {
-					$_.ID -eq $Item.ID -and
-					$_.Name -eq $Item.Name
-				} | Should -Not -BeNullOrEmpty
-			}
-
-		}
-
-		$Result = Get-Note 'Note In Folder'
-		$Now = [DateTime]::Now
-
-		It 'Returns a note by name' {
-			$Result.Count | Should -Be 1
-		}
-
-		It 'Decrypts the folder' {
-			$Result.Folder | Should -Be 'Productivity Tools\TestFolderName'
-		}
-
-		It 'Decrypts the note content' {
-			$Result.Content | Should -Be (
-				"NoteType:Server`n" +
-				"Hostname:Server Note`n" +
-				"Username:TestUsername`n" +
-				"Password:SuperSecurePassword`n" +
-				"Notes:Abitrary notes of the secure note"
-			)
-		}
-
-		It 'Exposes the last modification timestamp as a DateTime object' {
-			$Result.LastModified | Should -BeOfType DateTime
-			$Result.LastModified | Should -Be ([DateTime] '3/26/19 12:04:29 AM')
-		}
-		
-		It 'Exposes the last access timestamp as a DateTime object' {
-			$Result.LastAccessed | Should -BeOfType DateTime
-		}
-
-		It 'Updates the LastAccessed time' {
-			$Result.LastAccessed.DateTime | Should -Be $Now.DateTime
-		}
-	}
-
-	Describe Set-Note {
-
-		Mock Set-Item
-
-		$Note = [PSCustomObject] @{
-			ID           = '5148901049320353252'
-			Name         = 'sitename'
-			Content      = 'notecontent3'
-			Folder       = 'NewFolder1\NewFolder2'
-			Favorite     = $False
-			LastModified = [DateTime] '4/3/19 4:58:05 AM'
-			LastAccessed = [DateTime] '4/4/19 1:42:48 AM'
-		}
-
-		$Note | Set-Note
-
-		It 'Calls Set-Item with the SecureNote parameter' {
-			Assert-MockCalled Set-Item -ParameterFilter { $SecureNote }
-		}
-
-		
-
-	}
-
-	Describe Get-Item {
-		
-		BeforeAll {
-			$Script:Blob = ([XML] (Get-Content $ScriptRoot/Vault.xml)).Response
-			$Script:Session = [PSCustomObject] @{
-				Key = [Byte[]] @(
-					160,143,117,193,122,157,146,7,23,206,62,167,167,182,117,117,
-					60,118,172,154,146,119,36,238,73,80,241,107,95,3,40,236
-				)
-				Username = 'Username'
-				Iterations = '1'
-			}
-			$Script:Blob.Accounts.Account | ForEach { 
-				$_.SetAttribute('name', (ConvertFrom-LPEncryptedString $_.Name))
-			}
-		}
-
-		Get-Item
-		Get-Item -Type 'Account'
-		Get-Item 'Account Name'
-		'AccountName' | Get-Item
-
-		Get-Item -Type Note
-		Get-Item 'Note'
-
-		
-	}
-
-	Describe Set-Item {
-		
-		BeforeAll {
-			$Script:Blob = ([XML] (Get-Content $ScriptRoot/Vault.xml)).Response
-			$Script:Session = [PSCustomObject] @{
-				Key = [Byte[]] @(
-					160,143,117,193,122,157,146,7,23,206,62,167,167,182,117,117,
-					60,118,172,154,146,119,36,238,73,80,241,107,95,3,40,236
-				)
-				Username = 'Username'
-				Iterations = '1'
-			}
-			$Script:Blob.Accounts.Account | ForEach { 
-				$_.SetAttribute('name', (ConvertFrom-LPEncryptedString $_.Name))
 			}
 		}
 

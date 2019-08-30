@@ -17,7 +17,7 @@
 
 Using Namespace System.Security.Cryptography
 
-$Script:Interactive = [Environment]::UserInteractive -and 
+$Script:Interactive = [Environment]::UserInteractive -and
 	!([Environment]::GetCommandLineArgs() -eq '-NonInteractive')
 $Script:Epoch = [DateTime] '1970-01-01 00:00:00'
 $Script:Schema = @{
@@ -190,7 +190,7 @@ Function Connect-Lastpass {
 				$Type = $Response.Error.OutOfBandName
 				$Capabilities = $Response.Error.Capabilities -split ','
 				If(!$Type -or !$Capabilities){ Throw 'Could not determine out-of-band type' }
-				
+
 				$Param.Body.outofbandrequest = 1
 				$Prompt = "Complete multifactor authentication through $Type"
 				If($Capabilities -contains 'Passcode' -and $Interactive -and !$OneTimePassword ){
@@ -201,7 +201,7 @@ Function Connect-Lastpass {
 						If($Response.Error.Cause -eq 'OutOfBandRequired'){
 							$Param.Body.outofbandretry = 1
 							$Param.Body.outofbandretryid = $Response.Error.RetryID
-							
+
 							While([Console]::KeyAvailable){
 								$Input = [Console]::ReadKey($True)
 								Write-Debug ("Key: {0} {1}" -f $Input.Key, ($Input.Key -eq 'Enter'))
@@ -245,7 +245,7 @@ Function Connect-Lastpass {
 			{$_ -in 'GoogleAuthRequired', 'OTPRequired' -or ($_ -eq 'OutOfBandRequired' -and $OneTimePassword)} {
 				If(!$OneTimePassword){
 					If(!$Interactive){
-						Throw ('Powershell is running in noninteractive mode. ' + 
+						Throw ('Powershell is running in noninteractive mode. ' +
 							'Enter the one time password via the -OneTimePassword parameter.')
 					}
 					$OneTimePassword = Read-Host 'Enter multifactor authentication code'
@@ -269,18 +269,6 @@ Function Connect-Lastpass {
 		SessionID			= $Response.OK.SessionID
 		Token				= $Response.OK.Token
 		PrivateKey			= [RSAParameters]::New()
-		Iterations			= $Response.OK.Iterations
-		Username			= $Response.OK.LPUsername
-		Key					= $Key
-	}
-	$Response.OK | Out-String | Write-Debug
-	If(!$Response.OK){ Throw 'Login unsuccessful' }
-	
-	$Script:Session = [PSCustomObject] @{
-		UID					= $Response.OK.UID
-		SessionID			= $Response.OK.SessionID
-		Token				= $Response.OK.Token
-		EncryptedPrivateKey = $Response.OK.PrivateKeyEnc
 		Iterations			= $Response.OK.Iterations
 		Username			= $Response.OK.LPUsername
 		Key					= $Key
@@ -402,6 +390,7 @@ Function Sync-Lastpass {
 
 	[CmdletBinding()]
 	Param()
+	
 	If(!$Session){ Throw 'Not logged in. Use Connect-Lastpass to Log in' }
 	Write-Verbose 'Syncing Lastpass information'
 
@@ -967,7 +956,6 @@ Function New-Password {
 
 
 
->>>>>>> master
 <#
 New-Account {}
 
@@ -993,7 +981,7 @@ Set-Folder {}
 
 Remove-Folder {}
 
-	
+
 Reset-MasterPassword {}
 
 
@@ -1258,7 +1246,7 @@ Function Set-Item {
 
 				Break
 			}
-			Default { 
+			Default {
 				Throw ("Failed to update {0}.`n{1}" -f @(
 					$Name
 					$Response.OuterXML)
