@@ -610,7 +610,57 @@ InModuleScope Lastpass {
 
 	}
 
-	#TODO: Move Account/Note tests here
+	Describe New-Password {
+
+		It 'Returns a SecureString' {
+			New-Password | Should -BeOfType SecureString
+		}
+
+		It 'Returns a password of a specified length' {
+			(New-Password -Length 12 -AsPlainText).Length | Should -Be 12
+		}
+
+		It 'Does not include invalid characters' {
+			$Password = New-Password -AsPlainText -InvalidCharacters "A-Za-z1-9``~!@#$%^&*()\-_=+[{\]}\\|;:'`",<.>/? "
+			[Char[]] $Password | ForEach {
+				$_ | Should -Be ([Char] '0')
+			}
+		}
+
+		It 'Only includes valid characters' {
+			$ValidCharacters = [Char[]] "ABCDEFhijkll"
+			$Password = New-Password -AsPlainText -ValidCharacters "A-Fh-l"
+			[Char[]] $Password | ForEach {
+				$_ | Should -BeIn $ValidCharacters
+			}
+		}
+
+		@{
+			Alphanumeric = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'
+			Alphabetic = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz'
+			UpperCase = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
+			LowerCase = 'abcdefghijklmnopqrstuvwxyz'
+			Numeric = '0123456789'
+			Base64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/='
+			XML = (
+				"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ" +
+				"0123456789``~!@#$%^&*()-_=+[{]}\|;:,./? "
+			)
+		}.GetEnumerator() | ForEach {
+			$ValidCharacters = [Char[]]$_.Value
+			It "Filters valid characters for the $($_.Key) character set" {
+				$Password = New-Password -AsPlainText -CharacterSet $_.Key
+				([Char[]]$Password) | ForEach {
+					$_ | Should -BeIn $ValidCharacters
+				}
+			}
+		}
+
+		It 'Outputs a plaintext string if -AsPlainText is specified' {
+			New-Password -AsPlainText | Should -BeOfType String
+		}
+	}
+
 	Describe Get-Item {
 
 		BeforeAll {

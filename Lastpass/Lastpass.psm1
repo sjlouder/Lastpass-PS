@@ -767,10 +767,14 @@ Function Set-Note {
 Function New-Password {
 	<#
 	.SYNOPSIS
-	Generates a new password
+	Generates a new cryptographically random password
 
 	.DESCRIPTION
-	Long description
+	Uses the Security.Cryptography.RNGCryptoServiceProvider class to generate random characters.
+	By default it varies the length of the password to between 19 and 37 characters, to further
+	randomize the output. Allows for specifying preset character sets of allowed characters,
+	or specifying valid or invalid characters using regular expression set notation. The default
+	output is a SecureString object; you can use the -AsPlainText parameter to output a string.
 
 	.PARAMETER Length
 	The length of the password
@@ -787,8 +791,28 @@ Function New-Password {
 	.PARAMETER CharacterSet
 	The preset character set of valid characters.
 
+	.PARAMETER AsPlainText
+	If set to true, the password will be output in plaintext instead of a securestring
+
 	.EXAMPLE
 	New-Password
+	Generates a new random password
+
+	.EXAMPLE
+	New-Password -AsPlainString
+	Generates a new random password output as a plaintext string
+	By default, New-Password outputs a SecureString object
+
+	.EXAMPLE
+	New-Password -Length 25
+	Generates a random 25 character password
+
+	.EXAMPLE
+	New-Password -InvalidCharacters "a-c\[\]\\\-"
+	Generates a new random password without the characters a, b, c, [, ], \, or -
+	This example shows the regex set notation, and the characters that need to be escaped with a
+	preceding '\'
+
 	#>
 
 	[CmdletBinding(DefaultParameterSetName = 'InvalidCharacters')]
@@ -811,7 +835,9 @@ Function New-Password {
 			'Base64'
 		)]
 		[Parameter(ParameterSetName = 'CharacterSet')]
-		[String] $CharacterSet
+		[String] $CharacterSet,
+
+		[Switch] $AsPlainText
 	)
 
 	$ValidCharacterSet = ("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ" +
@@ -822,11 +848,11 @@ Function New-Password {
 		UpperCase	 = '^A-Z'
 		LowerCase	 = '^a-z'
 		Numeric		 = '^0-9'
-		XML			 = "<>&`"'"
 		Base64		 = '^A-Za-z0-9+/='
+		XML			 = "<>&`"'"
 	}
 	$RNG = [RNGCryptoServiceProvider]::New()
-	[Byte[]] $Bytes = 0,0,0,0
+	$Bytes = [Byte[]]::New(4)
 
 	#TODO: What if none are provided?
 	Switch($PSCmdlet.ParameterSetName){
@@ -834,8 +860,9 @@ Function New-Password {
 		ValidCharacters { $Filter = "[^$ValidCharacters]" }
 		CharacterSet { $Filter = "[{0}]" -f $CharacterSets[$CharacterSet] }
 	}
-	If($Filter){
+	If($Filter -notin $Null,'[]'){
 		$ValidCharacterSet = $ValidCharacterSet -creplace $Filter
+		"ValidCharacterSet: $ValidCharacterSet" | Write-Debug
 		If(!$ValidCharacterSet.Length){ Throw 'No valid characters for generating password' }
 	}
 
@@ -848,15 +875,22 @@ Function New-Password {
 		$Length = $RandomNumber + $MinLength
 	}
 
-	$Password = [String]::Join( '', (
-		0..$Length | ForEach {
-			$RNG.GetBytes($Bytes);
-			$RandomNumber = [BitConverter]::ToUInt32($Bytes,0) % $Chars.Length
-			$ValidCharacterSet[$RandomNumber]
-		}
-	))
+	$Password = 1..$Length | ForEach {
+		$RNG.GetBytes($Bytes)
+		$RandomNumber = [BitConverter]::ToUInt32($Bytes,0) % $ValidCharacterSet.Length
+		$ValidCharacterSet[$RandomNumber]
+	}
 
-	Write-Output $Password
+	If($AsPlainText){ $Password -join '' | Write-Output }
+	Else{
+		$SecurePassword = [SecureString]::New()
+		0..($Password.Length-1) | ForEach {
+			$SecurePassword.AppendChar($_)
+			$Password[$_] = $Null
+		}
+		Write-Output $SecurePassword
+	}
+
 }
 
 
