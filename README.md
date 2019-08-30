@@ -32,12 +32,15 @@ $GmailAccount.Password
 # Update account information
 $GmailAccount | Set-Account -PasswordProtect
 
+# Generate a new secure password
+$Password = New-Password -Length 23 -ValidCharacters 'A-Za-z0-9%*&'
+
 ```
 For more examples, check Tests/Lastpass.Tests.ps1.
 
 
 # STATUS AND FEATURES
-This project is in early stages and is not production ready. Logging in, getting the account data, and decrypting non shared fields has been implemented. Basic account and note updating has been implemented, but is not heavily tested.
+This project is in early stages and is not production ready. Logging in, getting the account data, and decrypting fields has been implemented. Basic account and note updating has been implemented, but is not heavily tested.
 **Create backup copies of your data before using this project to make any modifications.**
 
 Currently supported:
@@ -49,6 +52,7 @@ Currently supported:
 * Update accounts and notes
 	* **WARNING**: Not fully tested
 	* **WARNING**: Shared items not currently supported
+* Password generation
 
 Planned:
 * Accounts Support
@@ -71,8 +75,6 @@ Planned:
 	* Manage sharing
 * Attachment support
 	* Create/read/update/delete
-* Password generation
-	* Specific length, specify dis/allowed characters
 * Import/export
 * Lastpass:\ PS Drive (Hierarchical browsing of folders/accounts/notes) 
 * Logout
