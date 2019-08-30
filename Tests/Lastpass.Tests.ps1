@@ -8,6 +8,9 @@ InModuleScope Lastpass {
 	# Make sure no tests actually reach out to the internet
 	Mock Invoke-RestMethod
 
+	# Make sure no tests actually reach out to the internet
+	Mock Invoke-RestMethod
+
 	Describe Connect-Lastpass {
 
 		# Catch all mock to make sure tests don't reach out to the internet
@@ -19,25 +22,26 @@ InModuleScope Lastpass {
 			MockWith = { 100100 }
 		}
 		Mock @IterationsMockParam
- 
+
 		$LoginMockParam = @{
 			CommandName = 'Invoke-RestMethod'
 			ParameterFilter = { $URI -eq 'https://lastpass.com/login.php' }
-			MockWith = { 
+			MockWith = {
 				Return [PSCustomObject] @{
 					Response = [PSCustomObject] @{
 						OK = [PSCustomObject] @{
 							UID				= '123456789'
 							SessionID		= 'SessionIDHere1232'
 							Token			= 'TokenHere12332o432i432'
-							PrivateKeyEnc	= 'TestPrivateKey0-324irfk49-'
+							#FIXME: This needs to be the actual value
+							#PrivateKeyEnc	= 'TestPrivateKey0-324irfk49-'
 							Iterations		= '100100'
-							Username		= 'Username'
+							LPUsername		= 'Username'
 						}
 					}
 				}
 			}
-	
+
 		}
 		Mock @LoginMockParam
 
@@ -61,9 +65,47 @@ InModuleScope Lastpass {
 			Assert-MockCalled 'Invoke-RestMethod' -ParameterFilter {
 				$URI -eq 'https://lastpass.com/login.php'
 			}
+			$Session | Should -Not -BeNullOrEmpty
+			$WebSession | Should -Not -BeNullOrEmpty
+			@{
+				'UID' = '123456789'
+				'SessionID' = 'SessionIDHere1232'
+				'Token' = 'TokenHere12332o432i432'
+				'PrivateKey' = [System.Security.Cryptography.RSAParameters]::New()
+				'Iterations' = '100100'
+				'Username' = 'Username'
+			}.GetEnumerator() | ForEach {
+				$Item = $_.Key
+				$Session.$Item | Should -Be $_.Value
+			}
+			# Because the key is an array, it requires different logic
+			$Param = @{
+				ReferenceObject = $Session.Key
+				DifferenceObject = @(
+					35,117,158,133,114,46,63,215,
+					143,149,220,43,236,172,90,97,
+					75,234,179,100,253,33,11,232,
+					79,226,127,44,65,148,67,121
+				)
+				SyncWindow = 0
+			}
+			Compare-Object @Param | Should -BeNullOrEmpty
 		}
-		
-		# TODO: Refactor  this to separate tests for New-Key and New-LoginHash
+
+		It 'Decrypts the private key' {
+			$Session.PrivateKey | Should -Not -BeNullOrEmpty
+			#TODO: $Session.PrivateKey | Should -Be 'ExpectedValue'
+		}
+
+		It 'Syncs the account secrets' {
+			Assert-MockCalled Sync-Lastpass
+		}
+
+		It 'Skips the sync if -SkipSync parameter is specified' {
+			Connect-Lastpass -Credential $Credential -SkipSync
+			Assert-MockCalled Sync-Lastpass -Exactly -Times 0 -Scope It
+		}
+
 		Context 'Hash tests' {
 			@(
 				@{
@@ -88,7 +130,7 @@ InModuleScope Lastpass {
 				$TestData = $_
 				Mock 'Invoke-RestMethod' {$TestData.Iterations} -ParameterFilter {
 					$URI -eq 'https://lastpass.com/iterations.php' -and
-					$Body.email -eq $TestData.Username.ToLower()			
+					$Body.email -eq $TestData.Username.ToLower()
 				}
 				$Credential = [PSCredential]::New(
 					$TestData.Username,
@@ -100,7 +142,7 @@ InModuleScope Lastpass {
 						$URI -eq 'https://lastpass.com/login.php' -and
 						$Body.Hash -eq $TestData.Hash
 					}
-				} 
+				}
 			}
 		}
 
@@ -108,9 +150,9 @@ InModuleScope Lastpass {
 
 			$OTPEnabledMockParam = @{
 				CommandName = 'Invoke-RestMethod'
-				ParameterFilter = { 
+				ParameterFilter = {
 					$URI -eq 'https://lastpass.com/login.php'
-				}   
+				}
 			}
 			Mock @OTPEnabledMockParam {
 				Return [PSCustomObject] @{
@@ -125,8 +167,8 @@ InModuleScope Lastpass {
 
 			$OTPLoginMockParam = @{
 				CommandName = 'Invoke-RestMethod'
-				ParameterFilter = { 
-					$URI -eq 'https://lastpass.com/login.php' -and 
+				ParameterFilter = {
+					$URI -eq 'https://lastpass.com/login.php' -and
 					$Body.OTP
 				}
 			}
@@ -137,7 +179,7 @@ InModuleScope Lastpass {
 							UID				= '123456789'
 							SessionID		= 'uu4fdsu9fsDFad9WufdFEsaUUFD'
 							Token			= 'MTU0ODA0OTkxNi45MzMxLbu/wlKm16H07pJsq3q4UACWuqmr0nT+8msPiVgK4/Jv'
-							PrivateKeyEnc	= 'TestPrivateKey'
+						#	PrivateKeyEnc	= 'TestPrivateKey'
 						}
 					}
 				}
@@ -154,20 +196,18 @@ InModuleScope Lastpass {
 
 			It 'Includes OTP code passed as a parameter without interacting with the user' {
 				Assert-MockCalled Invoke-RestMethod -ParameterFilter {
-					$URI -eq 'https://lastpass.com/login.php' -and 
+					$URI -eq 'https://lastpass.com/login.php' -and
 					$Body.OTP -eq '123456'
 				}
 				Assert-MockCalled 'Read-Host' -Exactly -Times 0
 			}
-			
-			#FIXME: This currently fails in DevOps because it checks for interactive mode.
-			# Possibly override Interactive parameter in test file?
-			# TODO: More noninteractive mode tests
+
+			$Script:Interactive = $True
 			Connect-Lastpass -Credential $Credential | Out-Null
 			It 'Prompts user for app OTP if OTP parameter not included' {
 				Assert-MockCalled 'Read-Host' -Exactly -Times 1
 				Assert-MockCalled 'Invoke-RestMethod' -ParameterFilter {
-					$URI -eq 'https://lastpass.com/login.php' -and 
+					$URI -eq 'https://lastpass.com/login.php' -and
 					$Body.OTP -eq '124578'
 				}
 			}
@@ -338,7 +378,7 @@ InModuleScope Lastpass {
 
 		}
 
-		
+
 		# Errors: mock login response
 		# Need context for each or just mock+call+it blocks?
 		# Maybe just it with testcases? or ForEach?
@@ -362,22 +402,25 @@ InModuleScope Lastpass {
 
 	Describe Sync-Lastpass {
 
-		BeforeAll {
-			$Script:Session = [PSCustomObject] @{
-				Key = [Byte[]] @(
-					160,143,117,193,122,157,146,7,23,206,62,167,167,182,117,117,
-					60,118,172,154,146,119,36,238,73,80,241,107,95,3,40,236
-				)
-			}
+		$Script:Session = [PSCustomObject] @{
+			Key = [Byte[]] @(
+				160,143,117,193,122,157,146,7,23,206,62,167,167,182,117,117,
+				60,118,172,154,146,119,36,238,73,80,241,107,95,3,40,236
+			)
 		}
 
 		$DownloadMockParam = @{
 			CommandName = 'Invoke-RestMethod'
 			ParameterFilter = { $URI -eq 'https://lastpass.com/getaccts.php'}
 		}
-		Mock @DownloadMockParam { [XML] (Get-Content $ScriptRoot/Vault.xml) }
+		Mock @DownloadMockParam {
+			[Char[]][Convert]::FromBase64String((Get-Content $ScriptRoot/Vault)) -join ''
+		}
 
-		$Result = Sync-Lastpass
+		$Expected = Get-Content $ScriptRoot/ParsedVault.json | ConvertFrom-Json
+
+
+		Sync-Lastpass
 
 		It 'Calls the download API' {
 			Assert-MockCalled @DownloadMockParam
@@ -387,18 +430,103 @@ InModuleScope Lastpass {
 			$Script:Blob | Should -Not -BeNullOrEmpty
 		}
 
-		It 'Decrypts the account names' {
-			@(
-				'ThisIsTheAccountName',
-				'SecureNote1',
-				'TestName#$/3'
-			) | Should -BeIn $Script:Blob.Accounts.Account.Name
+		It 'Parses the blob version from blob' {
+			$Blob.Version | Should -Be 107
 		}
 
-		It 'Outputs ?' {
-			
+		# TODO: Test all properties of all objects for below tests
+		It 'Parses and decrypts the accounts' {
+			$Blob.Accounts.Length | Should -Be 5
+			$Expected.Accounts | ForEach {
+				$Reference = $_
+				$Account = ($Blob.Accounts | Where ID -eq $Reference.ID)
+				$Account | Should -Not -BeNullOrEmpty
+				Compare-Object $Reference.PSObject.Properties $Account.PSObject.Properties -Property Name |
+					Should -BeNullOrEmpty
+
+				$Account.PSObject.Properties.Name |
+					Where {$_ -notin 'Password', 'Note', 'Group', 'Credential'} |
+					ForEach {
+						If($Account.$_ -is [DateTime]){
+							$Account.$_.DateTime | Should -Be ($Epoch.AddSeconds([Int]$Reference.$_).DateTime)
+						}Else{ $Account.$_ | Should -Be $Reference.$_ }
+					}
+			}
+		}
+		$Account = $Blob.Accounts | Where ID -eq '1835977081662683158'
+
+		It 'Transforms the last modification timestamp to a DateTime object' {
+			$Account.LastModifiedGMT | Should -BeOfType DateTime
+			$Account.LastModifiedGMT | Should -Be ([DateTime] '08/15/2019 4:42:38 AM')
 		}
 
+		It 'Transforms the last access timestamp as a DateTime object' {
+			$Account.LastAccessed | Should -BeOfType DateTime
+			$Account.LastAccessed | Should -Be ([DateTime] '01/25/2019 3:09:08 AM')
+		}
+
+		It 'Parses and decrypts the secure notes' {
+			$Blob.SecureNotes.Length | Should -Be 2
+			$Expected.SecureNotes | ForEach {
+				$Reference = $_
+				$Note = ($Blob.SecureNotes | Where ID -eq $Reference.ID)
+				$Note | Should -Not -BeNullOrEmpty
+				Compare-Object $Reference.PSObject.Properties $Note.PSObject.Properties -Property Name |
+					Should -BeNullOrEmpty
+
+				$Note.PSObject.Properties.Name | ? {$_ -notin 'Note', 'Group'} | ForEach {
+					If($Note.$_ -is [DateTime]){
+						$Note.$_.DateTime | Should -Be ($Epoch.AddSeconds([Int]$Reference.$_).DateTime)
+					}Else{ $Note.$_ | Should -Be $Reference.$_ }
+				}
+			}
+		}
+
+		It 'Parses and decrypts the folders' {
+			$Blob.Folders.Length | Should -Be 4
+			$Expected.Folders | ForEach {
+				$Reference = $_
+				# $_ | Out-String | Write-Host
+				$Folder = ($Blob.Folders | Where ID -eq $Reference.ID)
+				$Folder | Should -Not -BeNullOrEmpty
+				Compare-Object $Reference.PSObject.Properties $Folder.PSObject.Properties -Property Name |
+					Should -BeNullOrEmpty
+
+				$Folder.PSObject.Properties.Name | ? {$_ -notin 'Password', 'Note', 'Group'} | ForEach {
+					# Write-Host $_
+					# Write-Host $Folder.$_
+					If($_ -eq 'Name'){
+						$Folder.$_ | Should -Be $Reference.Group
+					}
+					ElseIf($Folder.$_ -is [DateTime]){
+						$Folder.$_.DateTime | Should -Be ($Epoch.AddSeconds([Int]$Reference.$_).DateTime)
+					}Else{ $Folder.$_ | Should -Be $Reference.$_ }
+				}
+			}
+		}
+
+		It 'Parses and decrypts the shared folders' {
+			$Blob.SharedFolders.Length | Should -Be 2
+			$Expected.SharedFolders | ForEach {
+				$Reference = $_
+				$Folder = ($Blob.SharedFolders | Where ID -eq $Reference.ID)
+				$Folder | Should -Not -BeNullOrEmpty
+				Compare-Object $Reference.PSObject.Properties $Folder.PSObject.Properties -Property Name |
+					Should -BeNullOrEmpty
+				$Folder.PSObject.Properties.Name | ForEach {
+					If($_ -eq 'Key'){
+						([Char[]] $Folder.$_) -join '' | Should -Be ($Reference.$_)
+					}Else{ $Folder.$_ | Should -Be $Reference.$_ }
+				}
+			}
+		}
+
+		It 'Creates a PSCredential property' {
+			$Account.Credential | Should -Not -BeNullOrEmpty
+			$Account.Credential | Should -BeOfType PSCredential
+		}
+
+		It 'Outputs a Lastpass.Sync object' {}
 	}
 
 	Describe New-Account {
@@ -413,7 +541,7 @@ InModuleScope Lastpass {
 	Describe Get-Account {
 
 		BeforeAll {
-			$Script:Blob = ([XML] (Get-Content $ScriptRoot/Vault.xml)).Response
+			$Script:Blob = Get-Content $ScriptRoot/ParsedVault.json | ConvertFrom-Json
 			$Script:Session = [PSCustomObject] @{
 				Key = [Byte[]] @(
 					160,143,117,193,122,157,146,7,23,206,62,167,167,182,117,117,
@@ -422,19 +550,18 @@ InModuleScope Lastpass {
 				Username = 'Username'
 				Iterations = '1'
 			}
-			$Script:Blob.Accounts.Account | ForEach { 
-				$_.SetAttribute('name', (ConvertFrom-LPEncryptedString $_.Name))
-			}
 		}
 
 		$Result = Get-Account
 
 		It 'Returns all accounts if no account name is specified' {
-
-			$Result.Count | Should -Be 2
+			$Result.Count | Should -Be 5
 			@(
-				@{ ID = '1835977081662683158'; Name = 'ThisIsTheAccountName'}
-				@{ ID = '6989667599733115219'; Name = 'TestName#$/3' }
+				@{ ID = '1835977081662683158'; Name = 'Account1' }
+				@{ ID = '5148901049320353252'; Name = 'Account2' }
+				@{ ID = '3656362581793908418'; Name = 'SiteShareTest' }
+				@{ ID = '3524762968710500297'; Name = 'ShareAccount1' }
+				@{ ID = '6274670822055333050'; Name = 'TestName#$/3' }
 			) | ForEach {
 				$Item = $_
 				$Result | Where {
@@ -443,56 +570,49 @@ InModuleScope Lastpass {
 				} | Should -Not -BeNullOrEmpty
 			}
 		}
-		
-		$Result = Get-Account 'ThisIsTheAccountName'
+
+		$Result = Get-Account 'Account1'
 		$Now = [DateTime]::Now
 
 		It 'Gets account by name' {
 			$Result.Count | Should -Be 1
 		}
 
+		It 'Returns a Lastpass Account Object' {
+			$Result | Should -BeOfType "PSCustomObject('Lastpass.Account')"
+		}
+
 		It 'Decrypts the folder' {
-			$Result.Folder | Should -Be 'Productivity Tools'
+			$Result.Group | Should -Be 'ParentFolder'
 		}
 
 		It 'Decrypts the username' {
 			$Result.Username | Should -Be 'ThisIsTheUsername'
 		}
-		
-		It 'Decrypts the note content' {
+
+		It 'Decrypts the note content' -skip {
 			$Result.Notes | Should -Be 'These are arbitrary Notes attached to the Account'
-		}
-		
-		It 'Exposes the last modification timestamp as a DateTime object' {
-			$Result.LastModified | Should -BeOfType DateTime
-			$Result.LastModified | Should -Be ([DateTime] '12/14/18 7:37:21 PM')
-		}
-		
-		It 'Exposes the last access timestamp as a DateTime object' {
-			$Result.LastAccessed | Should -BeOfType DateTime
-			# $Result.LastAccessed | Should -Be ([DateTime] '1/25/19 3:09:08 AM')
 		}
 
 		It 'Updates the LastAccessed time' {
 			$Result.LastAccessed.DateTime | Should -Be $Now.DateTime
 		}
-		
-		It 'Exposes the password as a ScriptProperty' {
-			($Result.PSObject.Properties | Where Name -eq 'Password').MemberType | 
+
+		It 'Exposes the password as a ScriptProperty' -Skip {
+			($Result.PSObject.Properties | Where Name -eq 'Password').MemberType |
 				Should -Be ScriptProperty
 
 			$Result.Password | Should -Be 'ThisIsThePassword'
 		}
 
 		It 'Accepts pipeline input' {
-			$Result = 'ThisIsTheAccountName' | Get-Account
+			$Result = 'Account1' | Get-Account
 			$Result.ID | Should -Be 1835977081662683158
-			$Result.PSTypeNames[0] | Should -Be 'Lastpass.Account'
 		}
 
 		It 'Prompts for master password if account is password protected' {
-			($Script:Blob.Accounts.Account |
-				Where Name -eq 'ThisIsTheAccountName').SetAttribute('pwprotect', 1)
+			($Script:Blob.Accounts |
+				Where Name -eq 'Account1').PasswordProtect = $True
 			Mock Read-Host { 'Password' | ConvertTo-SecureString -A -F }
 			Mock New-Key {
 				[Byte[]] @(
@@ -501,15 +621,18 @@ InModuleScope Lastpass {
 				)
 			} -ParameterFilter { $Credential.GetNetworkCredential().Password -eq 'Password' }
 
-			Get-Account 'ThisIsTheAccountName'
-			
-			Assert-MockCalled Read-Host
+			Get-Account 'Account1'
+
+			Assert-MockCalled Read-Host -ParameterFilter {
+				$Prompt -eq 'Please confirm your password' -and
+				$AsSecureString
+			}
 		}
 
 		It 'Throws if master password check is wrong' {
 			Mock Read-Host {'NotTheCorrectPassword' | ConvertTo-SecureString -A -F}
-			{Get-Account 'ThisIsTheAccountName'} | Should -Throw
-			
+			{Get-Account 'Account1'} | Should -Throw 'Password confirmation failed'
+
 		}
 	}
 
@@ -555,8 +678,48 @@ InModuleScope Lastpass {
 
 	Describe Get-Note {
 
+		Mock Set-Item
+
+		$Account = [PSCustomObject] @{
+			ID           = '5148901049320353252'
+			Name         = 'sitename'
+			URL          = 'http://url.com'
+			Folder       = 'NewFolder1\NewFolder2'
+			Username     = 'usernamehere2'
+			Credential   = [PSCredential]::New(
+								'usernamehere2',
+								(ConvertTo-SecureString -A -F 'fdsafdasfda')
+							)
+			Notes        = 'notecontent3'
+			Favorite     = $False
+			LastModified = [DateTime] '4/3/19 4:58:05 AM'
+			LastAccessed = [DateTime] '4/4/19 1:42:48 AM'
+			LaunchCount  = 0
+			Bookmark     = $False
+			Password     = 'fdsafdasfda'
+		}
+
+		$Account | Set-Account
+		It 'Calls Set-Item with the parameters passed to it' {
+			Assert-MockCalled Set-Item -ParameterFilter {
+				$ID			-eq '5148901049320353252' -and
+				$Name		-eq 'sitename' -and
+				$Folder		-eq 'NewFolder1\NewFolder2' -and
+				$URL		-eq 'http://url.com' -and
+				$Username	-eq 'usernamehere2' -and
+				$Password	-eq 'fdsafdasfda' -and
+				$Notes		-eq 'notecontent3' -and
+				!$Favorite	-and
+				!$AutoLogin	-and
+				!$DisableAutofill
+			}
+		}
+	}
+
+	Describe Get-Note {
+
 		BeforeAll {
-			$Script:Blob = ([XML] (Get-Content $ScriptRoot/Vault.xml)).Response
+			$Script:Blob = Get-Content $ScriptRoot/ParsedVault.json | ConvertFrom-Json
 			$Script:Session = [PSCustomObject] @{
 				Key = [Byte[]] @(
 					160,143,117,193,122,157,146,7,23,206,62,167,167,182,117,117,
@@ -565,8 +728,161 @@ InModuleScope Lastpass {
 				Username = 'Username'
 				Iterations = '1'
 			}
-			$Script:Blob.Accounts.Account | ForEach { 
-				$_.SetAttribute('name', (ConvertFrom-LPEncryptedString $_.Name))
+		}
+
+		$Result = Get-Note
+
+		It 'Returns a list of all note IDs and names if no name is specified' {
+			$Result.Count | Should -Be 2
+			@(
+				@{ ID = '3365236279341564432'; Name = 'test' }
+				@{ ID = '8526543329769000462'; Name = 'Note In Folder' }
+			) | ForEach {
+				$Item = $_
+				$Result | Where {
+					$_.ID -eq $Item.ID -and
+					$_.Name -eq $Item.Name
+				} | Should -Not -BeNullOrEmpty
+			}
+
+		}
+
+		$Result = Get-Note 'test'
+		$Now = [DateTime]::Now
+
+		It 'Returns a note by name' {
+			$Result.Count | Should -Be 1
+		}
+
+		It 'Returns a Lastpass Note Object' {
+			$Result | Should -BeOfType "PSCustomObject('Lastpass.SecureNote')"
+		}
+
+		It 'Decrypts the note content' -skip {
+			$Result.Content | Should -Be (
+				"NoteType:Server`n" +
+				"Hostname:Server Note`n" +
+				"Username:TestUsername`n" +
+				"Password:SuperSecurePassword`n" +
+				"Notes:Abitrary notes of the secure note"
+			)
+		}
+
+		It 'Updates the LastAccessed time' {
+			$Result.LastAccessed.DateTime | Should -Be $Now.DateTime
+		}
+	}
+
+	Describe Set-Note {
+
+		Mock Set-Item
+
+		$Note = [PSCustomObject] @{
+			ID           = '5148901049320353252'
+			Name         = 'sitename'
+			Content      = 'notecontent3'
+			Folder       = 'NewFolder1\NewFolder2'
+			Favorite     = $False
+			LastModified = [DateTime] '4/3/19 4:58:05 AM'
+			LastAccessed = [DateTime] '4/4/19 1:42:48 AM'
+		}
+
+		$Note | Set-Note
+
+		It 'Calls Set-Item with the SecureNote parameter' {
+			Assert-MockCalled Set-Item -ParameterFilter { $SecureNote }
+		}
+
+
+
+	}
+
+	Describe New-Password {
+
+		It 'Returns a SecureString' {
+			New-Password | Should -BeOfType SecureString
+		}
+
+		It 'Returns a password of a specified length' {
+			(New-Password -Length 12 -AsPlainText).Length | Should -Be 12
+		}
+
+		It 'Does not include invalid characters' {
+			$Password = New-Password -AsPlainText -InvalidCharacters "A-Za-z1-9``~!@#$%^&*()\-_=+[{\]}\\|;:'`",<.>/? "
+			[Char[]] $Password | ForEach {
+				$_ | Should -Be ([Char] '0')
+			}
+		}
+
+		It 'Only includes valid characters' {
+			$ValidCharacters = [Char[]] "ABCDEFhijkll"
+			$Password = New-Password -AsPlainText -ValidCharacters "A-Fh-l"
+			[Char[]] $Password | ForEach {
+				$_ | Should -BeIn $ValidCharacters
+			}
+		}
+
+		@{
+			Alphanumeric = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'
+			Alphabetic = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz'
+			UpperCase = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
+			LowerCase = 'abcdefghijklmnopqrstuvwxyz'
+			Numeric = '0123456789'
+			Base64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/='
+			XML = (
+				"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ" +
+				"0123456789``~!@#$%^&*()-_=+[{]}\|;:,./? "
+			)
+		}.GetEnumerator() | ForEach {
+			$ValidCharacters = [Char[]]$_.Value
+			It "Filters valid characters for the $($_.Key) character set" {
+				$Password = New-Password -AsPlainText -CharacterSet $_.Key
+				([Char[]]$Password) | ForEach {
+					$_ | Should -BeIn $ValidCharacters
+				}
+			}
+		}
+
+		It 'Outputs a plaintext string if -AsPlainText is specified' {
+			New-Password -AsPlainText | Should -BeOfType String
+		}
+	}
+
+	Describe Get-Item {
+
+		BeforeAll {
+			$Script:Blob = Get-Content $ScriptRoot/ParsedVault.json | ConvertFrom-Json
+			$Script:Session = [PSCustomObject] @{
+				Key = [Byte[]] @(
+					160,143,117,193,122,157,146,7,23,206,62,167,167,182,117,117,
+					60,118,172,154,146,119,36,238,73,80,241,107,95,3,40,236
+				)
+				Username = 'Username'
+				Iterations = '1'
+			}
+		}
+
+		Get-Item
+		Get-Item -Type 'Account'
+		Get-Item 'Account Name'
+		'AccountName' | Get-Item
+
+		Get-Item -Type Note
+		Get-Item 'Note'
+
+	}
+
+	Describe Set-Item {
+
+		BeforeAll {
+			$Script:Blob = Get-Content $ScriptRoot/ParsedVault.json | ConvertFrom-Json
+			$Script:Session = [PSCustomObject] @{
+				Key = [Byte[]] @(
+					160,143,117,193,122,157,146,7,23,206,62,167,167,182,117,117,
+					60,118,172,154,146,119,36,238,73,80,241,107,95,3,40,236
+				)
+				Username = 'Username'
+				Iterations = '1'
 			}
 		}
 
@@ -696,32 +1012,32 @@ InModuleScope Lastpass {
 			ParameterFilter = { $URI -eq 'https://lastpass.com/show_website.php' }
 			MockWith = {
 				[XML] '<xmlresponse>
-					<result 
-						action="added" 
-						aid="5806258868441752428" 
-						urid="0" 
-						msg="accountupdated" 
-						acctname1="" 
-						acctname2="" 
-						acctname3="" 
-						acctname4="" 
-						acctname5="" 
-						acctname6="" 
-						grouping="!lRcc9xINpaUuHfd3Dt2sWZR8obQhQ==|NlyT/4wLJ4Vjfdstgxc2xVOk63eJ1dw61UURMC20vNOP8i/ImUqxiKXZ9mYjCbrmH5l" 
-						count="0" 
-						lasttouch="0000-00-00 00:00:00" 
-						editlink="" 
-						url="68747470733a2f2f676f6f676c652e636f6d" 
-						fav="1" 
-						launchjs="" 
-						deleted="0" 
-						remoteshare="0" 
-						username="!6hlToUTU2WMFvNIfds4rbaFjHv2bg==|TnC0fdsar55/KwXzSH/d5+2MRA==" 
-						localupdate="1" 
-						accts_version="134" 
-						pwprotect="1" 
-						submit_id="" 
-						captcha_id="" 
+					<result
+						action="added"
+						aid="5806258868441752428"
+						urid="0"
+						msg="accountupdated"
+						acctname1=""
+						acctname2=""
+						acctname3=""
+						acctname4=""
+						acctname5=""
+						acctname6=""
+						grouping="!lRcc9xINpaUuHfd3Dt2sWZR8obQhQ==|NlyT/4wLJ4Vjfdstgxc2xVOk63eJ1dw61UURMC20vNOP8i/ImUqxiKXZ9mYjCbrmH5l"
+						count="0"
+						lasttouch="0000-00-00 00:00:00"
+						editlink=""
+						url="68747470733a2f2f676f6f676c652e636f6d"
+						fav="1"
+						launchjs=""
+						deleted="0"
+						remoteshare="0"
+						username="!6hlToUTU2WMFvNIfds4rbaFjHv2bg==|TnC0fdsar55/KwXzSH/d5+2MRA=="
+						localupdate="1"
+						accts_version="134"
+						pwprotect="1"
+						submit_id=""
+						captcha_id=""
 						custom_js="">
 					</result>
 				</xmlresponse>'
@@ -760,39 +1076,39 @@ InModuleScope Lastpass {
 		It 'Calls the edit account API' {
 			Assert-MockCalled Invoke-RestMethod
 		}
-		
+
 		It 'Encrypts the Account Name' {
 			Assert-MockCalled Invoke-RestMethod -ParameterFilter {
-				($Body.Name | ConvertFrom-LPEncryptedString) -eq $Account.Name
+				($Body.Name | ConvertFrom-LPEncryptedString -Base64) -eq $Account.Name
 			}
 		}
-		
+
 		It 'Encrypts the Username' {
 			Assert-MockCalled Invoke-RestMethod -ParameterFilter {
-				($Body.UserName | ConvertFrom-LPEncryptedString) -eq 'NewUsername'
+				($Body.UserName | ConvertFrom-LPEncryptedString -Base64) -eq 'NewUsername'
 			}
 		}
-		
+
 		It 'Encrypts the Password' {
 			Assert-MockCalled Invoke-RestMethod -ParameterFilter {
-				($Body.Password | ConvertFrom-LPEncryptedString) -eq 'newPassword'
+				($Body.Password | ConvertFrom-LPEncryptedString -Base64) -eq 'newPassword'
 			}
 		}
-		
+
 		It 'Encrypts the folder' {
 			Assert-MockCalled Invoke-RestMethod -ParameterFilter {
-				($Body.Grouping | ConvertFrom-LPEncryptedString) -eq $Account.Folder
+				($Body.Grouping | ConvertFrom-LPEncryptedString -Base64) -eq $Account.Folder
 			}
 
 		}
-		
+
 		It 'Encrypts the note content' {
 			Assert-MockCalled Invoke-RestMethod -ParameterFilter {
-				($Body.Extra | ConvertFrom-LPEncryptedString) -eq $Account.Notes
+				($Body.Extra | ConvertFrom-LPEncryptedString -Base64) -eq $Account.Notes
 			}
 
 		}
-		
+
 		It 'Encodes the URL' {
 			Assert-MockCalled Invoke-RestMethod -ParameterFilter {
 				$Body.URL -eq '687474703a2f2f75726c2e636f6d'
@@ -806,21 +1122,21 @@ InModuleScope Lastpass {
 		It 'Includes password protect parameter if specified' {
 			$Account | Set-Account -PasswordProtect
 			Assert-MockCalled Invoke-RestMethod -ParameterFilter {
-				$Body.PWProtect	
+				$Body.PWProtect
 			} -Exactly -Times 1
 		}
-		
+
 		It 'Includes favorite parameter if specified' {
 			$Account | Set-Account -Favorite
 			Assert-MockCalled Invoke-RestMethod -ParameterFilter {
-				$Body.Fav	
+				$Body.Fav
 			} -Exactly -Times 1
 		}
 
 		It 'Includes autologin parameter if specified' {
 			$Account | Set-Account -AutoLogin
 			Assert-MockCalled Invoke-RestMethod -ParameterFilter {
-				$Body.AutoLogin	
+				$Body.AutoLogin
 			} -Exactly -Times 1
 		}
 
@@ -876,18 +1192,18 @@ InModuleScope Lastpass {
 			@{
 				Encrypted = 'BNhd3Q3ZVODxk9c0C788NUPTIfYnZuxXfkghtMJ8jVM='
 				Decrypted = 'All your base are belong to us'
-				Mode = 'ECB' #Base64
+				Mode = 'ECB'
 			}
 			@{
 				Encrypted = "!YFuiAVZgOD2K+s6y8yaMOw==|TZ1+if9ofqRKTatyUaOnfudletslMJ/RZyUwJuR/+aI="
 				Decrypted = "All your base are belong to us"
-				Mode = 'CBC' #Base64
+				Mode = 'CBC'
 			}
-			# @{
-			# 	Encrypted = "IcokDWmjOkKtLpZehWKL6666Uj6fNXPpX6lLWlou+1Lrwb+D3ymP6BAwd6C0TB3hSA=="
-			# 	Decrypted = "All your base are belong to us"
-			# 	Mode = 'CBC' #Base64
-			# }
+			@{
+				Encrypted = "IcokDWmjOkKtLpZehWKL6666Uj6fNXPpX6lLWlou+1Lrwb+D3ymP6BAwd6C0TB3hSA=="
+				Decrypted = "All your base are belong to us"
+				Mode = 'CBC'
+			}
 			@{
 				Encrypted = "8mHxIA8rul6eq72a/Gq2iw=="
 				Decrypted = "0123456789"
@@ -898,11 +1214,11 @@ InModuleScope Lastpass {
 				Decrypted = '0123456789'
 				Mode = 'CBC'
 			}
-			# @{
-			# 	Encrypted = 'IQ+hiIy0vGG4srsHmXChe3ehWc/rYPnfiyqOG8h78DdX'
-			# 	Decrypted = '0123456789'
-			# 	Mode = 'CBC'
-			# }		
+			@{
+				Encrypted = 'IQ+hiIy0vGG4srsHmXChe3ehWc/rYPnfiyqOG8h78DdX'
+				Decrypted = '0123456789'
+				Mode = 'CBC'
+			}
 		)
 		It 'Secret: "<Decrypted>"; Encoding <mode>' -TestCases $TestCases {
 			Param(
@@ -912,7 +1228,15 @@ InModuleScope Lastpass {
 				[String] $Decrypted,
 				[String] $Mode
 			)
-			ConvertFrom-LPEncryptedString $Encrypted | Should -Be $Decrypted
+
+			$Encrypted | ConvertFrom-LPEncryptedString -Base64 | Should -Be $Decrypted
+		}
+
+		It 'Uses the specified key if passed' {
+			$Key = [Convert]::FromBase64String('Bg0kRH2p+IC4mjRHlNm/IyNnfudsEXaaPLgHDeU0NTs=')
+
+			'IVdYT0McSfObWOy68igNDsDDSoATbUwNSt/TFEMnu5hV' |
+				ConvertFrom-LPEncryptedString -Key $Key -Base64 | Should -Be 'passw'
 		}
 
 		It 'Throws when invalid data is passed' {
@@ -923,11 +1247,11 @@ InModuleScope Lastpass {
 			$Session.Key = $Null
 
 			{ConvertFrom-LPEncryptedString 'AnythingHere'} |
-				Should -Throw 'Key not found. Please login using Connect-Lastpass.'
+				Should -Throw 'No decryption key found.'
 		}
 	}
 
-	Describe ConvertTo-LPEncryptedString {  
+	Describe ConvertTo-LPEncryptedString {
 		BeforeAll {
 			$Script:Session = @{
 				Key = [Convert]::FromBase64String("OfOUvVnQzB4v49sNh4+PdwIFb9Fr5+jVfWRTf+E2Ghg=")
@@ -944,9 +1268,16 @@ InModuleScope Lastpass {
 			Param(
 				[String] $Secret
 			)
-			
-			$Secret | ConvertTo-LPEncryptedString | ConvertFrom-LPEncryptedString |
+
+			$Secret | ConvertTo-LPEncryptedString | ConvertFrom-LPEncryptedString -Base64 |
 				Should -Be $Secret
+		}
+
+		It 'Uses the specified key if passed' {
+			$Key = [Convert]::FromBase64String('Bg0kRH2p+IC4mjRHlNm/IyNnfudsEXaaPLgHDeU0NTs=')
+
+			'test' | ConvertTo-LPEncryptedString -Key $Key | ConvertFrom-LPEncryptedString -Key $Key -Base64 |
+				Should -Be 'test'
 		}
 
 		It 'Generates a different IV each time' {
@@ -955,32 +1286,33 @@ InModuleScope Lastpass {
 			$Result2 = $String | ConvertTo-LPEncryptedString
 
 			$Result1[1..24] | Should -Not -Be $Result2[1..24]
-			$Result1 | ConvertFrom-LPEncryptedString |
-				Should -Be ($Result2 | ConvertFrom-LPEncryptedString)
+			$Result1 | ConvertFrom-LPEncryptedString -Base64 |
+				Should -Be ($Result2 | ConvertFrom-LPEncryptedString -Base64)
 		}
 
 		It 'Outputs the string in the correct format' {
 			$Base64Regex = '(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?'
 			'AnyString'| ConvertTo-LPEncryptedString | Should -match ('^!{0}\|{0}$' -f $Base64Regex)
 		}
-		
+
 		It 'Throws when no key is set' {
 			$Session.Key = $Null
 
 			{ConvertTo-LPEncryptedString 'AnythingHere'} |
-				Should -Throw 'Key not found. Please login using Connect-Lastpass.'
+				Should -Throw 'No decryption key found.'
 		}
 
 	}
 
 }
 
-Describe 'Documentation Tests' {
+Describe 'Documentation Tests' -Tag Documentation {
 	Get-Command -Module Lastpass | Get-Help | Where ModuleName -eq 'Lastpass' | ForEach {
 		Describe $_.Name {
-						
+
 			It 'Has a synopsis' {
 				$_.Synopsis | Should -Not -BeNullOrEmpty
+				$_.Synopsis | Should -Not -MatchExactly ('^\s{0}\s$' -f $_.Name)
 				$_.Synopsis | Should -Not -Be 'Short description'
 			}
 
@@ -997,7 +1329,7 @@ Describe 'Documentation Tests' {
 					}
 				}
 			}
-			
+
 			If($_.Examples){
 				It 'Has a description for each example' {
 					If($_.Examples.Example.Count -lt 2){
@@ -1006,6 +1338,41 @@ Describe 'Documentation Tests' {
 					$_.Examples.Example | ForEach {
 						$_.Remarks.Text[0] | ForEach {$_ | Should -Not -BeNullOrEmpty}
 					}
+				}
+			}
+		}
+	}
+}
+
+Describe 'TypeData' {
+	@{
+		'Lastpass.Account' = @(
+			'Name'
+			'Username'
+			'Folder'
+			'Favorite'
+		)
+		'Lastpass.SecureNote' = @(
+			'Name'
+			'Folder'
+			'Favorite'
+		)
+		'Lastpass.Folder' = @(
+			'Name'
+			'LastModifiedGMT'
+			'LastPasswordChange'
+		)
+		'Lastpass.SharedFolder' = @(
+			'Name'
+			'ReadOnly'
+		)
+	}.GetEnumerator() | ForEach {
+		Describe $_.Key {
+			$DisplayProperties = (Get-TypeData $_.Key).DefaultDisplayPropertySet.ReferencedProperties
+
+			$_.Value | ForEach {
+				It "Displays $_ by default" {
+					$_ | Should -BeIn $DisplayProperties
 				}
 			}
 		}
