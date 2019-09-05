@@ -390,7 +390,7 @@ Function Sync-Lastpass {
 
 	[CmdletBinding()]
 	Param()
-	
+
 	If(!$Session){ Throw 'Not logged in. Use Connect-Lastpass to Log in' }
 	Write-Verbose 'Syncing Lastpass information'
 
@@ -486,7 +486,7 @@ Function Sync-Lastpass {
 							HasBeenShared			= $Account.HasBeenShared
 							FIID					= $Account.FIID
 							DateCreated				= $Account.DateCreated
-							LastAccess				= $Account.LastModified
+							LastAccessed			= $Account.LastAccessed
 							LastPasswordChange		= $Account.LastPasswordChange
 							LastModifiedGMT			= $Account.LastModifiedGMT
 						}
