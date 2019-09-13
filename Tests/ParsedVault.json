@@ -200,10 +200,9 @@
       "Name": "test",
       "Group": null,
       "URL": "http://sn",
-      "Note": "!öG¥PÛ\nï`oM¿ñÂ|gaw5\u0006\u001cõèo}G`ó3\u001d",
+      "Notes": "Noteseres",
       "favorite": false,
       "SharedFromAID": null,
-      "Password": null,
       "PasswordProtect": false,
       "GeneratedPassword": false,
       "SecureNote": true,
@@ -237,10 +236,8 @@
       "Name": "Note In Folder",
       "Group": "Shared-Share2",
       "URL": "http://sn",
-      "Note": "!÷2ìâ.²:çO $¬§tk()îaÑÌÌW¶Ø3ê¦Ë3¸\u0006Ñ4\u0010\u0014'\u0016a¬ð\u001d4ç\"\\|¾/àoàÊ>/3k¹ä\u0011îÖ\u0015ajä~¨'õÉ8}ã\u0012\u0010Ïìvú6þT¾mÔ\u0012\u000bË²\\ßaÕ\nYd)\u0010 E19G+ýa\u0012H\r|YÑìNë¯×o\u001c°÷÷",
       "Favorite": false,
       "SharedFromAID": null,
-      "Password": null,
       "PasswordProtect": true,
       "GeneratedPassword": false,
       "SecureNote": true,
@@ -268,7 +265,11 @@
       "LastPasswordChange": "1565839063",
       "DateCreated": "1565839063",
       "Vulnerable": null,
-      "ShareFolderID": "259213521"
+      "ShareFolderID": "259213521",
+      "Hostname": "Server Note",
+      "Username":"TestUsername",
+      "Password": "SuperSecurePassword",
+      "Notes": "Abitrary notes of the secure note"
     }
   ],
   "Folders": [

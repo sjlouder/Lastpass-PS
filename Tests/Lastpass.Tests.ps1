@@ -445,7 +445,7 @@ InModuleScope Lastpass {
 					Should -BeNullOrEmpty
 
 				$Account.PSObject.Properties.Name |
-					Where {$_ -notin 'Password', 'Note', 'Group', 'Credential'} |
+					Where {$_ -notin 'Password', 'Notes', 'Group', 'Credential'} |
 					ForEach {
 						If($Account.$_ -is [DateTime]){
 							$Account.$_.DateTime | Should -Be ($Epoch.AddSeconds([Int]$Reference.$_).DateTime)
@@ -474,7 +474,7 @@ InModuleScope Lastpass {
 				Compare-Object $Reference.PSObject.Properties $Note.PSObject.Properties -Property Name |
 					Should -BeNullOrEmpty
 
-				$Note.PSObject.Properties.Name | ? {$_ -notin 'Note', 'Group'} | ForEach {
+				$Note.PSObject.Properties.Name | ForEach {
 					If($Note.$_ -is [DateTime]){
 						$Note.$_.DateTime | Should -Be ($Epoch.AddSeconds([Int]$Reference.$_).DateTime)
 					}Else{ $Note.$_ | Should -Be $Reference.$_ }
@@ -492,7 +492,7 @@ InModuleScope Lastpass {
 				Compare-Object $Reference.PSObject.Properties $Folder.PSObject.Properties -Property Name |
 					Should -BeNullOrEmpty
 
-				$Folder.PSObject.Properties.Name | ? {$_ -notin 'Password', 'Note', 'Group'} | ForEach {
+				$Folder.PSObject.Properties.Name | ForEach {
 					# Write-Host $_
 					# Write-Host $Folder.$_
 					If($_ -eq 'Name'){
