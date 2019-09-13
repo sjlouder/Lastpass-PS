@@ -26,7 +26,7 @@ $Script:Schema = @{
 			Name = 'Encrypted'
 			Group = 'Encrypted'
 			URL = 'Hex'
-			Note = 'Encrypted'
+			Notes = 'Encrypted'
 			Favorite = 'Boolean'
 			SharedFromAID = 'String' #?
 			Username = 'Encrypted'
@@ -67,13 +67,60 @@ $Script:Schema = @{
 		)
 	}
 	SecureNote = @{
+		Fields = @(
+			'ID'
+			'Name'
+			'Group'
+			'NoteType'
+			'Notes'
+			'AttachmentPresent'
+			'EncryptedAttachmentKey'
+			'PasswordProtect'
+			'Favorite'
+			'Deleted'
+			'HasBeenShared'
+			'FIID'
+			'DateCreated'
+			'LastAccessed'
+			'LastModifiedGMT'
+			'LastPasswordChange'
+		)
 		DefaultFields = @(
 			'Name'
 			'Folder'
 			'Favorite'
 		)
+		Types = @{
+			Address				= "Address"
+			Bank				= "Bank Account"
+			Credit				= "Credit Card"
+			Database			= "Database"
+			DriversLicense		= "Driver's License"
+			Email				= "Email Account"
+			Generic				= "Generic"
+			HealthInsurance		= "Health Insurance"
+			IM					= "Instant Messenger"
+			Insurance			= "Insurance"
+			Membership			= "Membership"
+			Passport			= "Passport"
+			Server				= "Server"
+			SSN					= "Social Security"
+			SoftwareLicense		= "Software License"
+			SSHKey				= "SSH Key"
+			Wifi				= "Wi-Fi Password"
+			Custom				= "Custom"
+		}
 	}
 	Folder = @{
+		Fields = @(
+			'ID'
+			'Name'
+			'FIID'
+			'DateCreated'
+			'LastAccessed'
+			'LastModifiedGMT'
+			'LastPasswordChange'
+		)
 		DefaultFields = @(
 			'Name'
 			'LastModifiedGMT'
@@ -97,7 +144,12 @@ $Script:Schema = @{
 }
 
 $Schema.GetEnumerator() | ForEach {
-	Update-TypeData -TypeName "Lastpass.$($_.Key)" -DefaultDisplayPropertySet $_.Value.DefaultFields -Force
+	$Param = @{
+		TypeName = "Lastpass.$($_.Key)"
+		DefaultDisplayPropertySet = $_.Value.DefaultFields
+		Force = $True
+	}
+	Update-TypeData @Param
 }
 
 $Script:Session
@@ -400,6 +452,8 @@ Function Sync-Lastpass {
 					Write-Debug "End Field $_"
 				}
 
+				If($Account.Group -eq '(none)'){ $Account.Group = $Null }
+
 				If($Blob.SharedFolders[-1].Name){
 					If($Account.Group){
 						$Account.Group = '{0}\{1}'-f $Blob.SharedFolders[-1].Name, $Account.Group
@@ -410,37 +464,33 @@ Function Sync-Lastpass {
 				Switch($Account.URL){
 					'http://sn' {
 						Write-Debug 'Item is Secure note'
-						$Blob.SecureNotes += [PSCustomObject] @{
-							PSTypeName				= 'Lastpass.SecureNote'
-							ID						= $Account.ID
-							Name					= $Account.Name
-							Group					= $Account.Group
-							NoteType				= $Account.NoteType
-							Note					= $Account.Note
-							AttachmentPresent		= $Account.AttachmentPresent
-							EncryptedAttachmentKey	= $Account.EncryptedAttachmentKey
-							PasswordProtect			= $Account.PasswordProtect
-							Favorite				= $Account.Favorite
-							Deleted					= $Account.Deleted
-							HasBeenShared			= $Account.HasBeenShared
-							FIID					= $Account.FIID
-							DateCreated				= $Account.DateCreated
-							LastAccess				= $Account.LastModified
-							LastPasswordChange		= $Account.LastPasswordChange
-							LastModifiedGMT			= $Account.LastModifiedGMT
+						$Account.Keys.Where({$_ -notin $Schema.SecureNote.Fields }) |
+							ForEach { $Account.Remove($_) }
+						$Account.PSTypeName = 'Lastpass.SecureNote'
+						If(
+							$Account.Notes -match ('^NoteType:(.*)') -and (
+								$Matches[1] -in $Schema.SecureNote.Types.Values -or
+								$Matches[1] -match '^Custom_(\d+)$'
+							)
+						){
+							'Custom Note: {0}' -f $Matches[1] | Write-Debug
+							$Account.Notes -split "`n" | ForEach {
+								If($Split = $_.IndexOf(':')){
+									$Key = $_.Substring(0,$Split)
+									$Account[$Key] = $_.Substring(($Split+1))
+								}
+								Else{ $Account[$Key] += "`n$_" }
+							}
 						}
+						$Blob.SecureNotes += [PSCustomObject] $Account
 					}
 					'http://group' {
 						Write-Debug 'Item is folder'
-						$Blob.Folders += [PSCustomObject] @{
-							PSTypeName			= 'Lastpass.Folder'
-							ID					= $Account.ID
-							LastPasswordChange	= $Account.LastPasswordChange
-							Name				= $Account.Group
-							DateCreated			= $Account.DateCreated
-							FIID				= $Account.FIID
-							LastModifiedGMT		= $Account.LastModifiedGMT
-						}
+						$Account.Name = $Account.Group
+						$Account.Keys.Where({$_ -notin $Schema.Folder.Fields}) |
+							ForEach { $Account.Remove($_) }
+						$Account.PSTypeName = 'Lastpass.Folder'
+						$Blob.Folders += [PSCustomObject] $Account
 					}
 					Default {
 						$Credential = @{ Username = $Account.Username }
