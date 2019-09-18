@@ -3,7 +3,8 @@ Import-Module -Force $PSScriptRoot/../Lastpass -Verbose:$False
 InModuleScope Lastpass {
 
 	$ScriptRoot = $PSScriptRoot
-	$Interactive = $True
+	$Script:Interactive = [Environment]::UserInteractive -and
+	!([Environment]::GetCommandLineArgs() -eq '-NonInteractive')
 
 	# Make sure no tests actually reach out to the internet
 	Mock Invoke-RestMethod
@@ -63,12 +64,12 @@ InModuleScope Lastpass {
 			$Session | Should -Not -BeNullOrEmpty
 			$WebSession | Should -Not -BeNullOrEmpty
 			@{
-				'UID' = '123456789'
-				'SessionID' = 'SessionIDHere1232'
-				'Token' = 'TokenHere12332o432i432'
-				'PrivateKey' = [System.Security.Cryptography.RSAParameters]::New()
-				'Iterations' = '100100'
-				'Username' = 'Username'
+				UID = '123456789'
+				SessionID = 'SessionIDHere1232'
+				Token = 'TokenHere12332o432i432'
+				PrivateKey = [System.Security.Cryptography.RSAParameters]::New()
+				Iterations = '100100'
+				Username = 'Username'
 			}.GetEnumerator() | ForEach {
 				$Item = $_.Key
 				$Session.$Item | Should -Be $_.Value
@@ -176,6 +177,9 @@ InModuleScope Lastpass {
 							SessionID		= 'uu4fdsu9fsDFad9WufdFEsaUUFD'
 							Token			= 'MTU0ODA0OTkxNi45MzMxLbu/wlKm16H07pJsq3q4UACWuqmr0nT+8msPiVgK4/Jv'
 						#	PrivateKeyEnc	= 'TestPrivateKey'
+							Iterations		= '100100'
+							LPUsername		= 'Username'
+
 						}
 					}
 				}
@@ -253,12 +257,12 @@ InModuleScope Lastpass {
 				}
 			}
 			Mock @OOBPollMockParam {
-				$Error = @{
+				$ErrorResponse = @{
 					Cause = 'OutOfBandRequired'
 					OutOfBandName = 'Duo Security'
 				}
 				If(!$Body.ContainsKey('outofbandretryid')){
-					$Error.RetryID = 0
+					$ErrorResponse.RetryID = 0
 				}
 				ElseIf($Body.outofbandretryid -eq 3){
 					Return [PSCustomObject] @{
@@ -269,17 +273,17 @@ InModuleScope Lastpass {
 								Token			= 'TokenHere12332o432i432'
 								#PrivateKeyEnc	= 'TestPrivateKey0-324irfk49-'
 								Iterations		= '100100'
-								Username		= 'Username'
+								LPUsername		= 'Username'
 							}
 						}
 					}
 				}
 				Else{
-					$Error.RetryID = $Body.outofbandretryid + 1
+					$ErrorResponse.RetryID = $Body.outofbandretryid + 1
 				}
 				Return [PSCustomObject] @{
 					Response = [PSCustomObject] @{
-						Error = [PSCustomObject] $Error
+						Error = [PSCustomObject] $ErrorResponse
 					}
 				}
 
@@ -306,77 +310,103 @@ InModuleScope Lastpass {
 				Assert-MockCalled @OOBPollMockParam -Times 5
 			}
 
-			It 'Proceeds once the OOB authentication has completed' {}
+			It 'Proceeds once the OOB authentication has completed' {
+				$Session | Should -Not -BeNullOrEmpty
+				$WebSession | Should -Not -BeNullOrEmpty
+				@{
+					UID = '123456789'
+					SessionID = 'SessionIDHere1232'
+					Token = 'TokenHere12332o432i432'
+					PrivateKey = [System.Security.Cryptography.RSAParameters]::New()
+					Iterations = '100100'
+					Username = 'Username'
+				}.GetEnumerator() | ForEach {
+					$Item = $_.Key
+					$Session.$Item | Should -Be $_.Value
+				}
+				# Because the key is an array, it requires different logic
+				$Param = @{
+					ReferenceObject = $Session.Key
+					DifferenceObject = @(
+						35,117,158,133,114,46,63,215,
+						143,149,220,43,236,172,90,97,
+						75,234,179,100,253,33,11,232,
+						79,226,127,44,65,148,67,121
+					)
+					SyncWindow = 0
+				}
+				Compare-Object @Param | Should -BeNullOrEmpty
+			}
 
-			Context 'OTP supported' {
+			If($Interactive){
+				Context 'OTP supported' {
 
-				Mock @OOBEnabledMockParam {
-					Return [PSCustomObject] @{
-						Response = [PSCustomObject] @{
-							Error = [PSCustomObject] @{
-								Cause = 'OutOfBandRequired'
-								OutOfBandName = 'Duo Security'
-								Capabilities = 'Passcode'
+					Mock @OOBEnabledMockParam {
+						Return [PSCustomObject] @{
+							Response = [PSCustomObject] @{
+								Error = [PSCustomObject] @{
+									Cause = 'OutOfBandRequired'
+									OutOfBandName = 'Duo Security'
+									Capabilities = 'Passcode'
+								}
 							}
 						}
 					}
-				}
 
-				$OTPLoginMockParam = @{
-					CommandName = 'Invoke-RestMethod'
-					ParameterFilter = {
-						$URI -eq 'https://lastpass.com/login.php' -and
-						$Body.OTP
+					$OTPLoginMockParam = @{
+						CommandName = 'Invoke-RestMethod'
+						ParameterFilter = {
+							$URI -eq 'https://lastpass.com/login.php' -and
+							$Body.OTP
+						}
 					}
-				}
-				Mock @OTPLoginMockParam {
-					Return [PSCustomObject] @{
-						Response = [PSCustomObject] @{
-							OK = [PSCustomObject] @{
-								UID				= '123456789'
-								SessionID		= 'SessionIDHere1232'
-								Token			= 'TokenHere12332o432i432'
-								#FIXME: This needs to be the actual value
-								#PrivateKeyEnc	= 'TestPrivateKey0-324irfk49-'
-								Iterations		= '100100'
-								LPUsername		= 'Username'
-								}
+					Mock @OTPLoginMockParam {
+						Return [PSCustomObject] @{
+							Response = [PSCustomObject] @{
+								OK = [PSCustomObject] @{
+									UID				= '123456789'
+									SessionID		= 'SessionIDHere1232'
+									Token			= 'TokenHere12332o432i432'
+									#FIXME: This needs to be the actual value
+									#PrivateKeyEnc	= 'TestPrivateKey0-324irfk49-'
+									Iterations		= '100100'
+									LPUsername		= 'Username'
+									}
+							}
+						}
+					}
+
+					Connect-Lastpass -Credential $Credential | Out-Null
+
+					It 'prompts to complete OOB authentication or enter one time password' {
+						Assert-MockCalled Write-Host -ParameterFilter {
+							$NoNewLine -and
+							$Object -eq ('Complete multifactor authentication through ' +
+										'Duo Security or enter a one time passcode: ')
+						}
+					}
+
+					It 'Polls the OOB endpoint to check whether authentication has succeeded' {
+						Assert-MockCalled @OOBPollMockParam
+					}
+
+					# FIXME: Console input is read using .net class calls, so can't mock it
+					It 'Reads the console for OTP input' {}
+					It 'Proceeds once a valid pin is entered' {}
+
+
+					It 'Uses the $OneTimePassword parameter if supplied' {
+						Connect-Lastpass -Credential $Credential -OneTimePassword '12312312' | Out-Null
+
+						# Assert-MockCalled @OOBEnabledMockParam
+
+						Assert-MockCalled Invoke-RestMethod -ParameterFilter {
+							$URI -eq 'https://lastpass.com/login.php' -and
+							$Body.OTP -eq '12312312'
 						}
 					}
 				}
-
-				Connect-Lastpass -Credential $Credential | Out-Null
-
-				It 'prompts to complete OOB authentication or enter one time password' {
-					Assert-MockCalled Write-Host -ParameterFilter {
-						$NoNewLine -and
-						$Object -eq ('Complete multifactor authentication through ' +
-									'Duo Security or enter a one time passcode: ')
-					}
-				}
-
-				It 'Polls the OOB endpoint to check whether authentication has succeeded' {
-					Assert-MockCalled @OOBPollMockParam
-				}
-
-				# FIXME: Console input is read using .net class calls, so can't mock it
-				It 'Reads the console for OTP input' {}
-				It 'Proceeds once a valid pin is entered' {}
-
-
-				It 'Uses the $OneTimePassword parameter if supplied' {
-					Connect-Lastpass -Credential $Credential -OneTimePassword '12312312' | Out-Null
-
-					# Assert-MockCalled @OOBEnabledMockParam
-
-					Assert-MockCalled Invoke-RestMethod -ParameterFilter {
-						$URI -eq 'https://lastpass.com/login.php' -and
-						$Body.OTP -eq '12312312'
-					}
-				}
-
 			}
-
 		}
 
 
