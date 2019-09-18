@@ -18,7 +18,7 @@
 Using Namespace System.Security.Cryptography
 
 $Script:Interactive = [Environment]::UserInteractive -and
-	!([Environment]::GetCommandLineArgs() -eq '-NonInteractive')
+	!([Environment]::GetCommandLineArgs() -like '-NonI*')
 $Script:Epoch = [DateTime] '1970-01-01 00:00:00'
 $Script:Schema = @{
 

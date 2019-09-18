@@ -3,8 +3,8 @@ Import-Module -Force $PSScriptRoot/../Lastpass -Verbose:$False
 InModuleScope Lastpass {
 
 	$ScriptRoot = $PSScriptRoot
-	$Script:Interactive = [Environment]::UserInteractive -and
-	!([Environment]::GetCommandLineArgs() -eq '-NonInteractive')
+	$IsInteractive = $Script:Interactive
+
 
 	# Make sure no tests actually reach out to the internet
 	Mock Invoke-RestMethod
@@ -290,6 +290,8 @@ InModuleScope Lastpass {
 			}
 
 			Mock Start-Sleep
+
+			$Script:Interactive = $IsInteractive
 
 			Connect-Lastpass -Credential $Credential | Out-Null
 
