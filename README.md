@@ -46,6 +46,7 @@ This project is in early stages and is not production ready. Logging in, getting
 Currently supported:
 * Login
 	* App OTP MFA
+	* Duo MFA
 * Get and decrypt accounts and notes
 	* Supports shared accounts and notes
 	* Supports password protection
@@ -65,7 +66,6 @@ Planned:
 	* Sharing
 	* Parse special types
 * Other Login methods
-	* Duo
 	* Yubikey
 	* Sesame
 * Folders support
