@@ -17,6 +17,8 @@
 
 Using Namespace System.Security.Cryptography
 
+$Script:Interactive = [Environment]::UserInteractive -and
+	!([Environment]::GetCommandLineArgs() -like '-NonI*')
 $Script:Epoch = [DateTime] '1970-01-01 00:00:00'
 $Script:Schema = @{
 
@@ -231,10 +233,73 @@ Function Connect-Lastpass {
 
 	#TODO: Change this to While($Response.Error)?
 	If($Response.Error){
-		'Error received:`n{0}' -f $Response.Error | Write-Debug
+		"Error received:`n{0}" -f $Response.Error.OuterXML | Write-Debug
 		Switch -Regex ($Response.Error.Cause){
-			'googleauthrequired|otprequired' {
+			OutOfBandRequired {
+				#TODO
+				#$Response.Error.OutOfBandType
+				#Return $Response
+				$Type = $Response.Error.OutOfBandName
+				$Capabilities = $Response.Error.Capabilities -split ','
+				If(!$Type -or !$Capabilities){ Throw 'Could not determine out-of-band type' }
+
+				$Param.Body.outofbandrequest = 1
+				$Prompt = "Complete multifactor authentication through $Type"
+				If($Capabilities -contains 'Passcode' -and $Interactive -and !$OneTimePassword ){
+					$Prompt += ' or enter a one time passcode: '
+					Write-Host -NoNewLine $Prompt
+					Do {
+						$Response = (Invoke-RestMethod @Param).Response
+						If($Response.Error.Cause -eq 'OutOfBandRequired'){
+							$Param.Body.outofbandretry = 1
+							$Param.Body.outofbandretryid = $Response.Error.RetryID
+
+							While([Console]::KeyAvailable){
+								$Input = [Console]::ReadKey($True)
+								Write-Debug ("Key: {0} {1}" -f $Input.Key, ($Input.Key -eq 'Enter'))
+								If( $Input.Key -eq 'Enter' ){
+									Write-Debug $OneTimePassword
+									$Param2 = $Param.Clone()
+									$Param2.Body.outofbandrequest = 0
+									$Param2.Body.outofbandretry = 0
+									$Param2.Body.outofbandretryid = ''
+									$Param2.Body.otp = $OneTimePassword
+									$Param2.Body | Out-String | Write-Debug
+									$Response = (Invoke-RestMethod @Param2).Response
+									$OneTimePassword = $Null
+									Break
+								}
+								$OneTimePassword += $Input.KeyChar
+							}
+						}
+						ElseIf($Response.Error.Cause -eq 'MultiFactorResponseFailed'){
+							Throw $Response.Error.Message
+						}
+						Start-Sleep 1
+					}Until($Response.OK)
+				}
+				ElseIf($Capabilities -notcontains 'Passcode' -or !$Interactive){
+					Write-Host -NoNewLine $Prompt
+					Do {
+						$Response = (Invoke-RestMethod @Param).Response
+						If($Response.Error.Cause -eq 'OutOfBandRequired'){
+							$Param.Body.outofbandretry = 1
+							$Param.Body.outofbandretryid = $Response.Error.RetryID
+						}
+						ElseIf($Response.Error.Cause -eq 'MultiFactorResponseFailed'){
+							Throw $Response.Error.Message
+						}
+						Start-Sleep 1
+					}Until($Response.OK)
+
+				}
+			}
+			{$_ -in 'GoogleAuthRequired', 'OTPRequired' -or ($_ -eq 'OutOfBandRequired' -and $OneTimePassword)} {
 				If(!$OneTimePassword){
+					If(!$Interactive){
+						Throw ('Powershell is running in noninteractive mode. ' +
+							'Enter the one time password via the -OneTimePassword parameter.')
+					}
 					$OneTimePassword = Read-Host 'Enter multifactor authentication code'
 				}
 				$Param.Body.otp = $OneTimePassword
@@ -242,14 +307,9 @@ Function Connect-Lastpass {
 
 				# TODO: Error checking
 				#'multifactorresponsefailed'
-				Break
-			}
-			'outofbandrequired' {
-				#TODO
-				#$Response.Error.OutOfBandType
-				Break
 			}
 			#'verifydevice' -> Default: Throw message
+			# Parse custombutton and customaction attributes
 			Default { Throw $Response.Error.Message }
 		}
 }
@@ -383,6 +443,7 @@ Function Sync-Lastpass {
 	[CmdletBinding()]
 	Param()
 
+	If(!$Session){ Throw 'Not logged in. Use Connect-Lastpass to Log in' }
 	Write-Verbose 'Syncing Lastpass information'
 
 	$Param = @{
@@ -955,9 +1016,6 @@ Remove-Account {}
 New-Note {}
 
 
-Set-Note {}
-
-
 Remove-Note {}
 
 
@@ -1029,7 +1087,6 @@ Function Get-Item {
 		}
 	}
 	PROCESS {
-
 		If($Name){
 			$Store | Where { $_.Name -eq $Name } | ForEach {
 				If($_.PasswordProtect -and 	$PasswordPrompt -lt (
@@ -1201,7 +1258,6 @@ Function Set-Item {
 
 	PROCESS {
 		If($SecureNote){ $URL = 'http://sn' }
-
 		$Body = @{
 			aid		 = $ID
 			name	 = $Name | ConvertTo-LPEncryptedString
@@ -1222,14 +1278,12 @@ Function Set-Item {
 		If(!$SecureNote){
 			$Body.username = $Username | ConvertTo-LPEncryptedString
 			$Body.password = $Password | ConvertTo-LPEncryptedString
-
 			If($AutoLogin){ $Body.autologin = 'on' }
 			If($DisableAutofill){ $Body.never_autofill = 'on' }
 		}
 
 		If($PasswordProtect){ $Body.pwprotect = 'on' }
 		If($Favorite){ $Body.fav = 'on' }
-
 		"Request Parameters:`n{0}" -f ($Body | Out-String) | Write-Debug
 		$Response = Invoke-RestMethod @Param -Body ($BodyBase + $Body)
 		$Response.OuterXML | Out-String | Write-Debug
@@ -1242,7 +1296,12 @@ Function Set-Item {
 
 				Break
 			}
-			Default { Throw "Failed to update $Name" }
+			Default {
+				Throw ("Failed to update {0}.`n{1}" -f @(
+					$Name
+					$Response.OuterXML)
+				)
+			}
 		}
 	}
 
