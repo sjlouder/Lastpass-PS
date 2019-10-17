@@ -996,7 +996,7 @@ Function New-Password {
 	Else{
 		$SecurePassword = [SecureString]::New()
 		0..($Password.Length-1) | ForEach {
-			$SecurePassword.AppendChar($_)
+			$SecurePassword.AppendChar($Password[$_])
 			$Password[$_] = $Null
 		}
 		Write-Output $SecurePassword
@@ -1272,6 +1272,8 @@ Function Set-Item {
 			#urid = 0			# ?
 			#auto = 1			# ?
 			#iid = ''			# ?
+			#save_all = 1		# Used for app fields?
+			#data = ""			# Used for app fields?
 			#>
 		}
 
@@ -1663,9 +1665,10 @@ Function ConvertTo-LPEncryptedString {
 	Encrypts the names of the accounts in the $DecryptedAccounts variable
 	#>
 
+	[CmdletBinding(DefaultParameterSetName='String')]
 	Param (
 		[Parameter(
-			Mandatory,
+			ParameterSetName='String',
 			ValueFromPipeline,
 			ValueFromPipelineByPropertyName,
 			Position = 0
@@ -1673,22 +1676,41 @@ Function ConvertTo-LPEncryptedString {
 		[AllowEmptyString()]
 		[String[]] $Value,
 
+		[Parameter(
+			ParameterSetName='SecureString',
+			Position = 0
+		)]
+		[AllowEmptyCollection()]
+		[Byte[]] $Bytes,
+
 		[Byte[]] $Key
 	)
 
 	BEGIN {
-		If(!$Key -and !$Session.Key){ Throw 'No decryption key found.' }
-		$AES = [AesManaged]::New()
-		$AES.KeySize = 256
-		$AES.Key = If($Key){
-			Write-Debug ('Using custom key {0}...' -f ($Key[0..4] -join ','))
-			$Key
+		If($PSCmdlet.ParameterSetName -eq 'String'){
+			If(!$Key -and !$Session.Key){ Throw 'No decryption key found.' }
+			$AES = [AesManaged]::New()
+			$AES.KeySize = 256
+			$AES.Key = If($Key){
+				Write-Debug ('Using custom key {0}...' -f ($Key[0..4] -join ','))
+				$Key
+			}
+			Else{ $Session.Key }
+			$AES.Mode = [CipherMode]::CBC
 		}
-		Else{ $Session.Key }
-		$AES.Mode = [CipherMode]::CBC
 	}
 
 	PROCESS {
+		If($PSCmdlet.ParameterSetName -eq 'SecureString'){
+			$Output = [SecureString]::New()
+			If($Bytes){
+				0..($Bytes.Length-1) | ForEach {
+					$Output.AppendChar($Bytes[$_])
+					$Bytes[$_] = $Null
+				}
+			}
+			Return $Output
+		}
 		$Value | ForEach {
 			$AES.GenerateIV()
 			$Encryptor = $AES.CreateEncryptor()

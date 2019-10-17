@@ -1124,7 +1124,7 @@ InModuleScope Lastpass {
 	}
 
 	Describe ConvertTo-LPEncryptedString {
-		BeforeAll {
+		BeforeEach {
 			$Script:Session = @{
 				Key = [Convert]::FromBase64String("OfOUvVnQzB4v49sNh4+PdwIFb9Fr5+jVfWRTf+E2Ghg=")
 			}
@@ -1172,6 +1172,19 @@ InModuleScope Lastpass {
 
 			{ConvertTo-LPEncryptedString 'AnythingHere'} |
 				Should -Throw 'No decryption key found.'
+		}
+
+		Context 'SecureString ParameterSet' {
+			It 'Secret: <Secret>' -TestCases $TestCases {
+				Param(
+					[String] $Secret
+				)
+
+				$Converted = ConvertTo-LPEncryptedString -Bytes ([Byte[]][Char[]] $Secret)
+				$Converted | Should -BeOfType SecureString
+				[PSCredential]::New('user', $Converted).GetNetworkCredential().Password |
+					Should -Be $Secret
+			}
 		}
 
 	}
