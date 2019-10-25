@@ -336,7 +336,7 @@ Function Connect-Lastpass {
 			Write-Debug 'Version 1 private key encoding'
 			$DecryptedKey = '!{0}{1}' -f @(
 				([char[]] $S.Session.Key -join ''),
-				($Response.OK.PrivateKeyEnc | ConvertFrom-Hex)
+				([Char[]] ($Response.OK.PrivateKeyEnc | ConvertFrom-Hex)) -join ''
 			) | ConvertFrom-LPEncryptedString
 		}
 
@@ -347,7 +347,7 @@ Function Connect-Lastpass {
 			Write-Warning 'Failed to decode decrypted private key'
 		}
 		Else{
-			$ASN1 = [Byte[]][Char[]] ($Matches[1] | ConvertFrom-Hex)
+			$ASN1 = $Matches[1] | ConvertFrom-Hex
 			Write-Debug "ASN1 Length: $($ASN1.Length)"
 			# This is a ASN.1 encoding, do basic parsing
 			$Sequence = (Read-ASN1Item -Blob $ASN1).Value
@@ -460,8 +460,9 @@ Function Sync-Lastpass {
 	$Response = Invoke-RestMethod @Param
 
 	If($Response.Error){ Throw $Response.Error.Cause }
+	$Response = [Byte[]][Char[]] $Response
 	#If($PSBoundParameters.Debug){ Return $Response }
-	# "Response:`n{0}" -f $Response | Write-Debug
+	#"Response:`n{0}" -f $Response | Write-Debug
 	#$Response = ([char[]][Convert]::FromBase64String($Response)) -join ''
 	$Script:LastSyncTime = Get-Date
 
@@ -477,22 +478,22 @@ Function Sync-Lastpass {
 		SharedFolders	= @()
 	}
 	While($Index -lt ($Response.Length-8)){
-		$ID = $Response[$Index..($Index+=3)] -join ''
-		Write-Debug "ID: $ID"
+		$Type = ([Char[]] $Response[$Index..($Index+=3)]) -join ''
+		Write-Debug "Type: $Type"
 		Write-Debug "Index: $Index"
 		$Data = Read-Item -Blob $Response -Index ($Index+=1) -Debug:$False
 		$Index += $Data.Length + 4
 		Write-Debug "After index: $Index"
 
-		If(!$Blob.Metadata[$ID]){ $Blob.Metadata[$ID] = 1}
-		Else{ $Blob.Metadata[$ID] += 1 }
+		If(!$Blob.Metadata[$Type]){ $Blob.Metadata[$Type] = 1}
+		Else{ $Blob.Metadata[$Type] += 1 }
 
-		If($ID -eq 'ENDM' -and $Data -eq 'OK'){ Break }
+		If($Type -eq 'ENDM' -and (([Char[]] $Data) -join '') -eq 'OK'){ Break }
 
 		$ItemIndex = 0
 		$Param = @{}
-		Switch($ID){
-			LPAV { $Blob.Version = $Data }
+		Switch($Type){
+			LPAV { $Blob.Version = [Char[]] $Data -join '' }
 			ACCT {
 				Write-Debug "BEGIN ACCOUNT DECODE"
 				$Account = @{ PSTypeName = 'Lastpass.Account' }
@@ -500,15 +501,22 @@ Function Sync-Lastpass {
 				'Param: {0}' -f ($Param | Out-String) | Write-Debug
 				$Schema.Account.Fields.Keys | ForEach {
 					Write-Debug "Field: $_"
+					$Field = $_
 					$Item = Read-Item -Blob $Data -Index $ItemIndex -Debug:$False
 					$ItemIndex += $Item.length + 4
 					#'Returned length: {0}' -f $Item.Length | Write-Debug
-					$Account[$_] = Switch($Schema.Account.Fields[$_]){
-						Encrypted	{ $Item | ConvertFrom-LPEncryptedString @Param }
-						Hex			{ $Item | ConvertFrom-Hex }
-						Boolean		{ !!([Int] $Item) }
-						Date		{ $Epoch.AddSeconds($Item) }
-						Default		{ $Item }
+					$Account[$Field] = Switch($Schema.Account.Fields[$Field]){
+						Encrypted {
+							If($Field -in 'Name','Group'){
+								[Char[]] $Item -join '' | ConvertFrom-LPEncryptedString @Param
+							}
+							Else{ ConvertTo-LPEncryptedString @Param -Bytes $Item }
+						}
+						#TODO: See if there are cleaner ways to do these conversions
+						Hex		{ [Char[]] ([Char[]] $Item -join '' | ConvertFrom-Hex) -join '' }
+						Boolean	{ !!([Int] ([Char[]] $Item -join '')) }
+						Date	{ $Epoch.AddSeconds([Char[]] $Item -join '') }
+						Default	{ If($Item){[Char[]] $Item -join ''}}
 					}
 					Write-Debug "End Field $_"
 				}
@@ -527,6 +535,8 @@ Function Sync-Lastpass {
 						Write-Debug 'Item is Secure note'
 						$Account.Keys.Where({$_ -notin $Schema.SecureNote.Fields }) |
 							ForEach { $Account.Remove($_) }
+						# TODO: Move this logic to Get-Note
+						# TODO: Account.Notes is stored as an encrypted SecureString
 						$Account.PSTypeName = 'Lastpass.SecureNote'
 						If(
 							$Account.Notes -match ('^NoteType:(.*)') -and (
@@ -554,11 +564,13 @@ Function Sync-Lastpass {
 						$Blob.Folders += [PSCustomObject] $Account
 					}
 					Default {
-						$Credential = @{ Username = $Account.Username }
+						#TODO: The username is now an encrypted SecureString
+						# The password is now an encrypted SecureString, so it needs to be decrypted
+						# and converted into a SecureString again.
+						# Also, move this logic to Get-Account
+						$Credential = @{ Username = 'res'} # $Account.Username }
 						If($Account.Password){
-							$Credential.Password = [SecureString] (
-								$Account.Password | ConvertTo-SecureString -AsPlainText -Force
-							)
+							$Credential.Password = $Account.Password
 						}
 						Else{ $Credential.Password = [SecureString]::Empty }
 
@@ -586,29 +598,29 @@ Function Sync-Lastpass {
 				}
 
 				If($Folder.AESFolderKey){
-					$Folder.Key = [Byte[]][Char[]] ($Folder.AESFolderKey |
+					$Folder.Key = [Char[]] $Folder.AESFolderKey -join '' |
 						ConvertFrom-LPEncryptedString |
-						ConvertFrom-Hex)
+						ConvertFrom-Hex
 				}
 				Else{
 					$RSA = [RSACryptoServiceProvider]::New()
 					$RSA.ImportParameters($Script:Session.PrivateKey)
-					$Folder.Key = [Byte[]][Char[]] ((
+					$Folder.Key = ((
 						$RSA.Decrypt(
-							([Byte[]][Char[]]($Folder.RSAEncryptedFolderKey | ConvertFrom-Hex)),
+							($Folder.RSAEncryptedFolderKey | ConvertFrom-Hex),
 							$True
 						)
 					) -join '' | ConvertFrom-Hex)
 				}
 
-				$Folder.Name = $Folder.Name | ConvertFrom-LPEncryptedString -Base64 -Key $Folder.Key
+				$Folder.Name = [Char[]] $Folder.Name -join '' | ConvertFrom-LPEncryptedString -Base64 -Key $Folder.Key
 
 				$Blob.SharedFolders += [PSCustomObject] $Folder
 				Write-Debug "END SHARE DECODE"
 			}
 			Default {
-				If($Blob.ContainsKey($ID)){ $Blob[$ID] += $Data }
-				Else{ $Blob[$ID] = @($Data) }
+				If($Blob.ContainsKey($Type)){ $Blob[$Type] += $Data }
+				Else{ $Blob[$Type] = @($Data) }
 			}
 		}
 	}
@@ -1450,7 +1462,7 @@ Function Read-Item {
 	[CmdletBinding()]
 	Param(
 		[Parameter(Mandatory)]
-		[String] $Blob,
+		[Byte[]] $Blob,
 
 		[Int] $Index = 0
 	)
@@ -1458,13 +1470,13 @@ Function Read-Item {
 	"Blob Snippet: {0}" -f ($Blob[$Index..($Index+50)] -join '') | Write-Debug
 
 
-	$Size = $Blob[($Index)..($Index+=3)]
+	$Size = $Blob[$Index..($Index+=3)]
 	If([BitConverter]::IsLittleEndian){ [Array]::Reverse($Size) }
 	$Size = [BitConverter]::ToUInt32($Size,0)
-	Write-Debug "Size: $Size"
+	# Write-Host "Size: $Size"
 	If($Size){
-		$Data = $Blob[($Index+=1)..(($Index+=$Size)-1)] -join ''
-		Write-Debug "Data: $Data"
+		$Data = $Blob[($Index+=1)..(($Index+=$Size)-1)]
+		# Write-Host "Data: $Data"
 		Write-Output $Data
 	}
 
@@ -1638,7 +1650,6 @@ Function ConvertFrom-LPEncryptedString {
 }
 
 
-
 Function ConvertTo-LPEncryptedString {
 
 	<#
@@ -1647,10 +1658,18 @@ Function ConvertTo-LPEncryptedString {
 
 	.DESCRIPTION
 	Encrypts strings for communication with Lastpass and storage
-	Uses CBC encryption, generating a new random CBC IV.
+
+	If a string is passed in, it will convert it into a CBC encrypted value in the format Lastpass
+	expects for upload or communication.
+
+	If a byte array is passed in, it will convert them into a SecureString object. This is useful
+	for decryption of the Lastpass account blob without generating a plaintext string
 
 	.PARAMETER Value
 	The string to encrypt
+
+	.PARAMETER Bytes
+	The array of characters to convert into a SecureString
 
 	.PARAMETER Key
 	If specified, this key will be used for encryption.
@@ -1663,6 +1682,10 @@ Function ConvertTo-LPEncryptedString {
 	.EXAMPLE
 	$DecryptedAccounts.Username | ConvertTo-LPEncryptedString
 	Encrypts the names of the accounts in the $DecryptedAccounts variable
+
+	.EXAMPLE
+	ConvertTo-LPEncryptedString -Bytes $Bytes
+	Converts the byte array $Bytes into a SecureString object, suitable for in memory storage
 	#>
 
 	[CmdletBinding(DefaultParameterSetName='String')]
@@ -1726,7 +1749,7 @@ Function ConvertTo-LPEncryptedString {
 }
 
 
-
+#TODO: Have this output a byte array or a string
 Function ConvertFrom-Hex {
 	<#
 	.SYNOPSIS
@@ -1737,11 +1760,11 @@ Function ConvertFrom-Hex {
 
 	.EXAMPLE
 	ConvertFrom-Hex '56616C7565'
-	Decodes the hex string to 'Value'
+	Decodes the hex string to 86,97,108,117,101 ('Value')
 
 	.EXAMPLE
 	'506970656C696E6556616C7565' | ConvertFrom-Hex
-	Decodes the hex string to 'PipelineValue'
+	Decodes the hex string to 80,105,112,101,108,105,110,101,86,97,108,117,101 ('PipelineValue')
 	#>
 
 	[CmdletBinding()]
@@ -1758,8 +1781,8 @@ Function ConvertFrom-Hex {
 
 	$Value | ForEach {
 		($_ -split '([a-f0-9]{2})' | ForEach {
-			If($_){ [Char][Convert]::ToByte($_,16) }
-		}) -join ''
+			If($_){ [Convert]::ToByte($_,16) }
+		})
 	}
 
 }

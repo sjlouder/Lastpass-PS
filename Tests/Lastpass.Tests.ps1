@@ -480,6 +480,7 @@ InModuleScope Lastpass {
 				$Account.PSObject.Properties.Name |
 					Where {$_ -notin 'Password', 'Notes', 'Group', 'Credential'} |
 					ForEach {
+						Write-Host $_
 						If($Account.$_ -is [DateTime]){
 							$Account.$_.DateTime | Should -Be ($Epoch.AddSeconds([Int]$Reference.$_).DateTime)
 						}Else{ $Account.$_ | Should -Be $Reference.$_ }
