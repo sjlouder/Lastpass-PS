@@ -132,11 +132,11 @@ $Script:Schema = @{
 	SharedFolder = @{
 		Fields = [Ordered] @{
 			ID = 'String'
-			RSAEncryptedFolderKey = 'Skip'
-			Name = 'Skip'
+			RSAEncryptedFolderKey = 'Hex'
+			Name = 'String'
 			ReadOnly = 'Boolean'
-			Give = 'Skip' #Not sure what this is
-			AESFolderKey = 'Skip'
+			Give = 'Int' #Not sure what this is
+			AESFolderKey = 'String'
 		}
 		DefaultFields = @(
 			'Name'
@@ -507,6 +507,8 @@ Function Sync-Lastpass {
 					#'Returned length: {0}' -f $Item.Length | Write-Debug
 					$Account[$Field] = Switch($Schema.Account.Fields[$Field]){
 						Encrypted {
+							# The name and group are sent encrypted, but are generally needed
+							# for organizing and finding the accounts, so they are decrypted here.
 							If($Field -in 'Name','Group'){
 								[Char[]] $Item -join '' | ConvertFrom-LPEncryptedString @Param
 							}
@@ -516,7 +518,7 @@ Function Sync-Lastpass {
 						Hex		{ [Char[]] ([Char[]] $Item -join '' | ConvertFrom-Hex) -join '' }
 						Boolean	{ !!([Int] ([Char[]] $Item -join '')) }
 						Date	{ $Epoch.AddSeconds([Char[]] $Item -join '') }
-						Default	{ If($Item){[Char[]] $Item -join ''}}
+						Default	{ If($Item){[Char[]] $Item -join ''} }
 					}
 					Write-Debug "End Field $_"
 				}
@@ -586,34 +588,34 @@ Function Sync-Lastpass {
 				$Folder = @{ PSTypeName = 'Lastpass.SharedFolder' }
 				$Schema.SharedFolder.Fields.Keys | ForEach {
 					Write-Debug "Field: $_"
-					$Folder[$_] = Read-Item -Blob $Data -Index $ItemIndex -Debug:$False
-					'Returned length: {0}' -f $Folder[$_].Length | Write-Debug
-					$ItemIndex += $Folder[$_].length + 4
+					$Item = Read-Item -Blob $Data -Index $ItemIndex -Debug:$False
+					'Returned length: {0}' -f $Item.Length | Write-Debug
+					$ItemIndex += $Item.length + 4
+					$Folder[$_] = Switch($Schema.SharedFolder.Fields[$_]){
+						String	{ If($Item){[Char[]] $Item -join ''} }
+						Boolean	{ !!([Int] ([Char[]] $Item -join '')) }
+						Int		{ [Int] ([Char[]] $Item -join '') }
+						Hex		{ [Char[]] $Item -join '' | ConvertFrom-Hex }
+						Default { $Item }
+					}
 					Write-Debug "End Field $_"
 				}
-				$Folder.ReadOnly = !!([Int]$Folder.ReadOnly)
 
 				If(!$Folder.AESFolderKey -or !$Folder.RSAEncryptedFolderKey){
 					'Share key not found for ID: {0}' -f $Folder.ID | Write-Warning
 				}
 
 				If($Folder.AESFolderKey){
-					$Folder.Key = [Char[]] $Folder.AESFolderKey -join '' |
+					$Folder.Key = $Folder.AESFolderKey |
 						ConvertFrom-LPEncryptedString |
 						ConvertFrom-Hex
 				}
 				Else{
 					$RSA = [RSACryptoServiceProvider]::New()
 					$RSA.ImportParameters($Script:Session.PrivateKey)
-					$Folder.Key = ((
-						$RSA.Decrypt(
-							($Folder.RSAEncryptedFolderKey | ConvertFrom-Hex),
-							$True
-						)
-					) -join '' | ConvertFrom-Hex)
+					$Folder.Key = $RSA.Decrypt($Folder.RSAEncryptedFolderKey, $True) -join ''
 				}
-
-				$Folder.Name = [Char[]] $Folder.Name -join '' | ConvertFrom-LPEncryptedString -Base64 -Key $Folder.Key
+				$Folder.Name = $Folder.Name | ConvertFrom-LPEncryptedString -Base64 -Key $Folder.Key
 
 				$Blob.SharedFolders += [PSCustomObject] $Folder
 				Write-Debug "END SHARE DECODE"

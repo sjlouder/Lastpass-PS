@@ -478,9 +478,8 @@ InModuleScope Lastpass {
 					Should -BeNullOrEmpty
 
 				$Account.PSObject.Properties.Name |
-					Where {$_ -notin 'Password', 'Notes', 'Group', 'Credential'} |
+					Where {$_ -notin 'Username', 'Password', 'Notes', 'Credential'} |
 					ForEach {
-						Write-Host $_
 						If($Account.$_ -is [DateTime]){
 							$Account.$_.DateTime | Should -Be ($Epoch.AddSeconds([Int]$Reference.$_).DateTime)
 						}Else{ $Account.$_ | Should -Be $Reference.$_ }
@@ -508,7 +507,7 @@ InModuleScope Lastpass {
 				Compare-Object $Reference.PSObject.Properties $Note.PSObject.Properties -Property Name |
 					Should -BeNullOrEmpty
 
-				$Note.PSObject.Properties.Name | ForEach {
+				$Note.PSObject.Properties.Name | Where { $_ -notin 'Notes' } | ForEach {
 					If($Note.$_ -is [DateTime]){
 						$Note.$_.DateTime | Should -Be ($Epoch.AddSeconds([Int]$Reference.$_).DateTime)
 					}Else{ $Note.$_ | Should -Be $Reference.$_ }
@@ -548,9 +547,14 @@ InModuleScope Lastpass {
 				Compare-Object $Reference.PSObject.Properties $Folder.PSObject.Properties -Property Name |
 					Should -BeNullOrEmpty
 				$Folder.PSObject.Properties.Name | ForEach {
-					If($_ -eq 'Key'){
-						([Char[]] $Folder.$_) -join '' | Should -Be ($Reference.$_)
-					}Else{ $Folder.$_ | Should -Be $Reference.$_ }
+					Switch($_){
+						Key { [Char[]] $Folder.$_ -join '' | Should -Be $Reference.$_ }
+						RSAEncryptedFolderKey {
+							($Folder.$_ | ForEach { "{0:x2}" -f $_ }) -join '' |
+								Should -Be $Reference.$_
+						}
+						Default { $Folder.$_ | Should -Be $Reference.$_ }
+					}
 				}
 			}
 		}
