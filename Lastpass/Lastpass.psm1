@@ -537,25 +537,8 @@ Function Sync-Lastpass {
 						Write-Debug 'Item is Secure note'
 						$Account.Keys.Where({$_ -notin $Schema.SecureNote.Fields }) |
 							ForEach { $Account.Remove($_) }
-						# TODO: Move this logic to Get-Note
-						# TODO: Account.Notes is stored as an encrypted SecureString
 						$Account.PSTypeName = 'Lastpass.SecureNote'
-						If(
-							$Account.Notes -match ('^NoteType:(.*)') -and (
-								$Matches[1] -in $Schema.SecureNote.Types.Values -or
-								$Matches[1] -match '^Custom_(\d+)$'
-							)
-						){
-							'Custom Note: {0}' -f $Matches[1] | Write-Debug
-							$Account.Notes -split "`n" | ForEach {
-								If($Split = $_.IndexOf(':')){
-									$Key = $_.Substring(0,$Split)
-									$Account[$Key] = $_.Substring(($Split+1))
-								}
-								Else{ $Account[$Key] += "`n$_" }
-							}
-						}
-						$Blob.SecureNotes += [PSCustomObject] $Account
+						$Blob.SecureNotes += $Account
 					}
 					'http://group' {
 						Write-Debug 'Item is folder'
@@ -566,17 +549,6 @@ Function Sync-Lastpass {
 						$Blob.Folders += [PSCustomObject] $Account
 					}
 					Default {
-						#TODO: The username is now an encrypted SecureString
-						# The password is now an encrypted SecureString, so it needs to be decrypted
-						# and converted into a SecureString again.
-						# Also, move this logic to Get-Account
-						$Credential = @{ Username = 'res'} # $Account.Username }
-						If($Account.Password){
-							$Credential.Password = $Account.Password
-						}
-						Else{ $Credential.Password = [SecureString]::Empty }
-
-						$Account.Credential = [PSCredential]::New([PSCustomObject] $Credential)
 						$Blob.Accounts += [PSCustomObject] $Account
 					}
 				}
@@ -664,8 +636,31 @@ Function Get-Account {
 		[String] $Name
 	)
 	PROCESS {
-		If($Name){ $Name | Get-Item -Type Account }
-		Else{ Get-Item -Type Account }
+		If($Name){
+			$Script:Blob.Accounts | Where Name -eq $Name | ForEach {
+				If($_.PasswordProtect){ Confirm-Password }
+
+				$Account = $_.Clone()
+				$Account.Username = [PSCredential]::New(' ', $Account.Username).GetNetworkCredential().Password
+				#TODO: The username is now an encrypted SecureString
+				# The password is now an encrypted SecureString, so it needs to be decrypted
+				# and converted into a SecureString again.
+				$Credential = @{ Username = $Account.Username }
+				If($Account.Password){
+					$Credential.Password = $Account.Password
+				}
+				Else{ $Credential.Password = [SecureString]::Empty }
+
+				$Account.Credential = [PSCredential]::New([PSCustomObject] $Credential)
+
+
+				$Account.Notes = [PSCredential]::New(' ', $Note.Notes).GetNetworkCredential().Password
+				$Account.LastAccessed = [DateTime]::Now
+				[PSCustomObject] $Account | Write-Output
+			}
+		}
+		Else{ $Script:Blob.SecureNotes | Select ID, Name | Write-Output }
+
 	}
 }
 
@@ -807,10 +802,33 @@ Function Get-Note {
 		)]
 		[String] $Name
 	)
+	If($Name){
+		$Script:Blob.SecureNotes | Where Name -eq $Name | ForEach {
+			If($_.PasswordProtect){ Confirm-Password }
 
-	$Param = @{ Type = 'Note' }
-	If($Name){ $Param.Name = $Name }
-	Get-Item @Param
+			$Note = $_.Clone()
+			$Note.Notes = [PSCredential]::New(' ', $Note.Notes).GetNetworkCredential().Password
+			If(
+				$Note.Notes -match ('^NoteType:(.*)') -and (
+					$Matches[1] -in $Schema.SecureNote.Types.Values -or
+					$Matches[1] -match '^Custom_(\d+)$'
+				)
+			){
+				'Custom Note: {0}' -f $Matches[1] | Write-Debug
+				$Note.Notes -split "`n" | ForEach {
+					If($Split = $_.IndexOf(':')){
+						$Key = $_.Substring(0,$Split)
+						$Note[$Key] = $_.Substring(($Split+1))
+					}
+					Else{ $Note[$Key] += "`n$_" }
+				}
+			}
+			$Note.LastAccessed = [DateTime]::Now
+			[PSCustomObject] $Note | Write-Output
+		}
+	}
+	Else{ $Script:Blob.SecureNotes | Select ID, Name | Write-Output }
+
 }
 
 
@@ -1053,80 +1071,6 @@ Move-Folder?
 
 
 #>
-
-
-
-Function Get-Item {
-
-	<#
-	.SYNOPSIS
-	Returns one or more Lastpass items
-
-	.DESCRIPTION
-	Returns one or more Lastpass accounts or secure notes
-
-	.PARAMETER Name
-	The name of the item to return.
-	If no name is provided, Get-Item returns all items
-
-	.PARAMETER Type
-	The type of item to return
-	Acceptable values are: Account, Note, or All
-
-	.EXAMPLE
-	Get-Account
-	Returns a list of all account IDs and names
-
-	.EXAMPLE
-	Get-Account -Name 'Email'
-	Returns all accounts named 'Email'
-
-	#>
-	[CmdletBinding()]
-	Param(
-		[Parameter(
-			ValueFromPipeline,
-			ValueFromPipelineByPropertyName
-		)]
-		[String] $Name,
-
-		[ValidateSet('Account', 'Note')]
-		[String] $Type
-	)
-	BEGIN {
-		$Store = Switch($Type){
-			'Account' { $Script:Blob.Accounts }
-			'Note' { $Script:Blob.SecureNotes }
-			Default { $Script:Blob.Accounts + $Script:Blob.SecureNotes }
-		}
-	}
-	PROCESS {
-		If($Name){
-			$Store | Where { $_.Name -eq $Name } | ForEach {
-				If($_.PasswordProtect -and 	$PasswordPrompt -lt (
-				[DateTime]::Now.Subtract($PasswordTimeout))){
-					# TODO: Should this loop? Possibly for a set number of retries?
-					$Password = Read-Host -AsSecureString 'Please confirm your password'
-					$Credential = [PSCredential]::New($Script:Session.Username, $Password)
-					$Key = New-Key -Credential $Credential -Iterations $Script:Session.Iterations
-
-					$Param = @{
-						ReferenceObject	 = $Script:Session.Key
-						DifferenceObject = $Key
-						SyncWindow		 = 0
-					}
-					If(Compare-Object @Param){ Throw 'Password confirmation failed' }
-					$Script:PasswordPrompt = [DateTime]::Now
-				}
-				$_.LastAccessed = [DateTime]::Now
-				$_ | Write-Output
-			}
-		}
-		Else{ $Store | Select ID, Name | Write-Output }
-	}
-}
-
-
 
 Function Set-Item {
 	<#
@@ -1789,6 +1733,42 @@ Function ConvertFrom-Hex {
 
 }
 
+
+Function Confirm-Password {
+	<#
+	.SYNOPSIS
+	 Short description
+
+	.DESCRIPTION
+	Long description
+
+	.EXAMPLE
+	Confirm-Password
+
+	.EXAMPLE
+	Confirm-Password
+	#>
+
+	[CmdletBinding()]
+	Param()
+
+	If($PasswordPrompt -lt [DateTime]::Now.Subtract($PasswordTimeout)){
+		#TODO: Should this loop? Possibly for a set number of retries?
+		$Password = Read-Host -AsSecureString 'Please confirm your password'
+		$Credential = [PSCredential]::New($Script:Session.Username, $Password)
+		$Key = New-Key -Credential $Credential -Iterations $Script:Session.Iterations
+
+		$Param = @{
+			ReferenceObject	 = $Script:Session.Key
+			DifferenceObject = $Key
+			SyncWindow		 = 0
+		}
+		If(Compare-Object @Param){ Throw 'Password confirmation failed' }
+		$Script:PasswordPrompt = [DateTime]::Now
+	}
+
+
+}
 
 
 #FIXME! Remove; for debugging purposes only

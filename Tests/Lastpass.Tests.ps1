@@ -579,6 +579,10 @@ InModuleScope Lastpass {
 	Describe Get-Account {
 
 		BeforeAll {
+			#TODO: The username,password, and notes should be stored as the parsed encrypted bytes, 
+			# not the decrypted value
+			# Create test data that includes the parsed encypted bytes of the encrypted properties
+
 			$Script:Blob = Get-Content $ScriptRoot/ParsedVault.json | ConvertFrom-Json
 			$Script:Session = [PSCustomObject] @{
 				Key = [Byte[]] @(
@@ -628,7 +632,7 @@ InModuleScope Lastpass {
 			$Result.Username | Should -Be 'ThisIsTheUsername'
 		}
 
-		It 'Decrypts the note content' -skip {
+		It 'Decrypts the note content' {
 			$Result.Notes | Should -Be 'These are arbitrary Notes attached to the Account'
 		}
 
@@ -717,7 +721,12 @@ InModuleScope Lastpass {
 	Describe Get-Note {
 
 		BeforeAll {
-			$Script:Blob = Get-Content $ScriptRoot/ParsedVault.json | ConvertFrom-Json
+			#TODO: The notes should be stored as the blob bytes, not the decrypted value
+			# Create test data that includes the parsed encypted bytes of the encrypted properties
+			$Script:Blob = Get-Content $ScriptRoot/ParsedVault.json | ConvertFrom-Json -AsHashtable
+			$Script:Blob.SecureNotes | ForEach { $_.Notes = ConvertTo-SecureString -A -F $_.Notes }
+			$Script:PasswordPrompt = [DateTime]::Now
+			$Script:PasswordTimeout = New-TimeSpan -Minutes 2
 			$Script:Session = [PSCustomObject] @{
 				Key = [Byte[]] @(
 					160,143,117,193,122,157,146,7,23,206,62,167,167,182,117,117,
@@ -726,8 +735,9 @@ InModuleScope Lastpass {
 				Username = 'Username'
 				Iterations = '1'
 			}
+			$ExpectedNotes = (Get-Content $ScriptRoot/ParsedVault.json | ConvertFrom-Json).SecureNotes
 		}
-
+		#Simple test
 		$Result = Get-Note
 
 		It 'Returns a list of all note IDs and names if no name is specified' {
@@ -746,6 +756,7 @@ InModuleScope Lastpass {
 		}
 
 		$Result = Get-Note 'test'
+		$Expected = $ExpectedNotes | Where Name -eq 'test'
 		$Now = [DateTime]::Now
 
 		It 'Returns a note by name' {
@@ -756,18 +767,34 @@ InModuleScope Lastpass {
 			$Result | Should -BeOfType "PSCustomObject('Lastpass.SecureNote')"
 		}
 
-		It 'Decrypts the note content' -skip {
-			$Result.Content | Should -Be (
-				"NoteType:Server`n" +
-				"Hostname:Server Note`n" +
-				"Username:TestUsername`n" +
-				"Password:SuperSecurePassword`n" +
-				"Notes:Abitrary notes of the secure note"
-			)
+		It 'Decrypts the note content' {
+			$Result.Notes | Should -Be $Expected.Notes
 		}
 
 		It 'Updates the LastAccessed time' {
 			$Result.LastAccessed.DateTime | Should -Be $Now.DateTime
+		}
+
+		# Custom note
+		$Result = Get-Note 'Note In Folder'
+		$Expected = $ExpectedNotes | Where Name -eq 'Note In Folder'
+		It 'Prompts for password if note requires it' {
+			# Mock Read-Host? + New-Key + Compare-Object
+		}
+
+		It 'Parses custom note properties and exposes them as properties' {
+			'NoteType',
+			'Hostname',
+			'Username',
+			'Password',
+			'Notes' | ForEach {
+				# $Expected.$_ | Write-Host
+				# $Result.$_ | Write-Host
+				If($Expected.$_){
+					$Result.$_ | Should -Be $Expected.$_
+				}
+			}
+
 		}
 	}
 
@@ -844,30 +871,6 @@ InModuleScope Lastpass {
 		It 'Outputs a plaintext string if -AsPlainText is specified' {
 			New-Password -AsPlainText | Should -BeOfType String
 		}
-	}
-
-	Describe Get-Item {
-
-		BeforeAll {
-			$Script:Blob = Get-Content $ScriptRoot/ParsedVault.json | ConvertFrom-Json
-			$Script:Session = [PSCustomObject] @{
-				Key = [Byte[]] @(
-					160,143,117,193,122,157,146,7,23,206,62,167,167,182,117,117,
-					60,118,172,154,146,119,36,238,73,80,241,107,95,3,40,236
-				)
-				Username = 'Username'
-				Iterations = '1'
-			}
-		}
-
-		Get-Item
-		Get-Item -Type 'Account'
-		Get-Item 'Account Name'
-		'AccountName' | Get-Item
-
-		Get-Item -Type Note
-		Get-Item 'Note'
-
 	}
 
 	Describe Set-Item {
