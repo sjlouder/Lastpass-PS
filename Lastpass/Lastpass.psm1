@@ -86,6 +86,7 @@ $Script:Schema = @{
 			'LastAccessed'
 			'LastModifiedGMT'
 			'LastPasswordChange'
+			'ShareFolderID'
 		)
 		DefaultFields = @(
 			'Name'
@@ -122,6 +123,7 @@ $Script:Schema = @{
 			'LastAccessed'
 			'LastModifiedGMT'
 			'LastPasswordChange'
+			'ShareFolderID'
 		)
 		DefaultFields = @(
 			'Name'
@@ -210,6 +212,7 @@ Function Connect-Lastpass {
 	[Int] $Iterations = Invoke-RestMethod @Param
 	Write-Debug "Iterations: $Iterations"
 
+	#TODO: Make this return a SecureString?
 	$Key = New-Key -Credential $Credential -Iterations $Iterations
 	$Hash = New-LoginHash -Key $Key -Credential $Credential -Iterations $Iterations
 
@@ -330,14 +333,14 @@ Function Connect-Lastpass {
 		If($Response.OK.PrivateKeyEnc[0] -eq '!'){
 			Write-Debug 'Version 2 private key encoding'
 			$DecryptedKey = [Convert]::FromBase64String($Response.OK.PrivateKeyEnc) -join '' |
-				ConvertFrom-LPEncryptedString
+				ConvertFrom-LPEncryptedData
 		}
 		Else{
 			Write-Debug 'Version 1 private key encoding'
 			$DecryptedKey = '!{0}{1}' -f @(
 				([char[]] $S.Session.Key -join ''),
-				([Char[]] ($Response.OK.PrivateKeyEnc | ConvertFrom-Hex)) -join ''
-			) | ConvertFrom-LPEncryptedString
+				(([Char[]] ($Response.OK.PrivateKeyEnc | ConvertFrom-Hex)) -join '')
+			) | ConvertFrom-LPEncryptedData
 		}
 
 		If(!$DecryptedKey){
@@ -510,7 +513,7 @@ Function Sync-Lastpass {
 							# The name and group are sent encrypted, but are generally needed
 							# for organizing and finding the accounts, so they are decrypted here.
 							If($Field -in 'Name','Group'){
-								[Char[]] $Item -join '' | ConvertFrom-LPEncryptedString @Param
+								[Char[]] $Item -join '' | ConvertFrom-LPEncryptedData @Param
 							}
 							Else{ ConvertTo-LPEncryptedString @Param -Bytes $Item }
 						}
@@ -525,11 +528,12 @@ Function Sync-Lastpass {
 
 				If($Account.Group -eq '(none)'){ $Account.Group = $Null }
 
-				If($Blob.SharedFolders[-1].Name){
+				If($Blob.SharedFolders[-1]){
 					If($Account.Group){
 						$Account.Group = '{0}\{1}'-f $Blob.SharedFolders[-1].Name, $Account.Group
 					}
 					Else{ $Account.Group = $Blob.SharedFolders[-1].Name }
+					$Account.ShareFolderID = $Blob.SharedFolders[-1].ID
 				}
 
 				Switch($Account.URL){
@@ -579,7 +583,7 @@ Function Sync-Lastpass {
 
 				If($Folder.AESFolderKey){
 					$Folder.Key = $Folder.AESFolderKey |
-						ConvertFrom-LPEncryptedString |
+						ConvertFrom-LPEncryptedData |
 						ConvertFrom-Hex
 				}
 				Else{
@@ -587,7 +591,7 @@ Function Sync-Lastpass {
 					$RSA.ImportParameters($Script:Session.PrivateKey)
 					$Folder.Key = $RSA.Decrypt($Folder.RSAEncryptedFolderKey, $True) -join ''
 				}
-				$Folder.Name = $Folder.Name | ConvertFrom-LPEncryptedString -Base64 -Key $Folder.Key
+				$Folder.Name = $Folder.Name | ConvertFrom-LPEncryptedData -Base64 -Key $Folder.Key
 
 				$Blob.SharedFolders += [PSCustomObject] $Folder
 				Write-Debug "END SHARE DECODE"
@@ -640,26 +644,38 @@ Function Get-Account {
 			$Script:Blob.Accounts | Where Name -eq $Name | ForEach {
 				If($_.PasswordProtect){ Confirm-Password }
 
-				$Account = $_.Clone()
-				$Account.Username = [PSCredential]::New(' ', $Account.Username).GetNetworkCredential().Password
-				#TODO: The username is now an encrypted SecureString
-				# The password is now an encrypted SecureString, so it needs to be decrypted
-				# and converted into a SecureString again.
+				$Account = @{}
+				$Param = @{}
+				If($Account.ShareFolderID){
+					$Param.Key = $Blob.SharedFolders |
+						Where ID -eq $Account.ShareFolderID |
+						ForEach Key
+				}
+
+				$_.GetEnumerator() | ForEach {
+					If($_.Value -isnot [SecureString]){
+						$Account[$_.Key] = $_.Value
+					}
+					Else{
+						$Param.SecureString = $_.Value
+						$Account[$_.Key] = ConvertFrom-LPEncryptedData @Param
+					}
+				}
+
 				$Credential = @{ Username = $Account.Username }
 				If($Account.Password){
-					$Credential.Password = $Account.Password
+					[SecureString] $Credential.Password = $Account.Password |
+						ConvertTo-SecureString -AsPlainText -Force
 				}
 				Else{ $Credential.Password = [SecureString]::Empty }
 
 				$Account.Credential = [PSCredential]::New([PSCustomObject] $Credential)
 
-
-				$Account.Notes = [PSCredential]::New(' ', $Note.Notes).GetNetworkCredential().Password
 				$Account.LastAccessed = [DateTime]::Now
 				[PSCustomObject] $Account | Write-Output
 			}
 		}
-		Else{ $Script:Blob.SecureNotes | Select ID, Name | Write-Output }
+		Else{ $Script:Blob.Accounts | Select ID, Name | Write-Output }
 
 	}
 }
@@ -806,8 +822,24 @@ Function Get-Note {
 		$Script:Blob.SecureNotes | Where Name -eq $Name | ForEach {
 			If($_.PasswordProtect){ Confirm-Password }
 
-			$Note = $_.Clone()
-			$Note.Notes = [PSCredential]::New(' ', $Note.Notes).GetNetworkCredential().Password
+			$Note = @{}
+			$Param = @{}
+			If($_.ShareFolderID){
+				$Param.Key = $Blob.SharedFolders |
+					Where ID -eq $_.ShareFolderID |
+					ForEach Key
+			}
+
+			$_.GetEnumerator() | ForEach {
+				If($_.Value -isnot [SecureString]){
+					$Note[$_.Key] = $_.Value
+				}
+				Else{
+					$Param.SecureString = $_.Value
+					$Note[$_.Key] = ConvertFrom-LPEncryptedData @Param
+				}
+			}
+
 			If(
 				$Note.Notes -match ('^NoteType:(.*)') -and (
 					$Matches[1] -in $Schema.SecureNote.Types.Values -or
@@ -816,7 +848,7 @@ Function Get-Note {
 			){
 				'Custom Note: {0}' -f $Matches[1] | Write-Debug
 				$Note.Notes -split "`n" | ForEach {
-					If($Split = $_.IndexOf(':')){
+					If(($Split = $_.IndexOf(':')) -ne -1){
 						$Key = $_.Substring(0,$Split)
 						$Note[$Key] = $_.Substring(($Split+1))
 					}
@@ -1322,7 +1354,6 @@ Function New-Key {
 }
 
 
-
 Function New-LoginHash {
 	<#
 	.SYNOPSIS
@@ -1419,10 +1450,10 @@ Function Read-Item {
 	$Size = $Blob[$Index..($Index+=3)]
 	If([BitConverter]::IsLittleEndian){ [Array]::Reverse($Size) }
 	$Size = [BitConverter]::ToUInt32($Size,0)
-	# Write-Host "Size: $Size"
+	# Write-Debug "Size: $Size"
 	If($Size){
 		$Data = $Blob[($Index+=1)..(($Index+=$Size)-1)]
-		# Write-Host "Data: $Data"
+		# Write-Debug "Data: $Data"
 		Write-Output $Data
 	}
 
@@ -1494,14 +1525,14 @@ Function Read-ASN1Item {
 }
 
 
-Function ConvertFrom-LPEncryptedString {
+Function ConvertFrom-LPEncryptedData {
 
 	<#
 	.SYNOPSIS
 	Decrypts Lastpass encrypted strings
 
 	.DESCRIPTION
-	Decrypts strings encrypted for Lastpass server communication
+	Decrypts data from Lastpass blob and transmission
 	Supports CBC and ECB encryption
 
 	.PARAMETER Value
@@ -1515,29 +1546,37 @@ Function ConvertFrom-LPEncryptedString {
 	Whether the input is Base64 encoded
 
 	.EXAMPLE
-	ConvertFrom-LPEncryptedString -Value '!lks;jf90s|fsafj9#IOj893fj'
+	ConvertFrom-LPEncryptedData -Value '!lks;jf90s|fsafj9#IOj893fj'
 	Decrypts the Lastpass encrypted input string
 
 	.EXAMPLE
-	$EncryptedAccounts.Name | ConvertFrom-LPEncryptedString
+	$EncryptedAccounts.Name | ConvertFrom-LPEncryptedData
 	Decrypts the names of the accounts in the $EncryptedAccounts variable
 
 	.EXAMPLE
 	$Key = [Convert]::FromBase64String('Bg0kRH2p+IC4mjRHlNm/IyNnfudsEXaaPLgHDeU0NTs=')
-	'IVdYT0McSfObWOy68igNDsDDSoATbUwNSt/TFEMnu5hV' | ConvertFrom-LPEncryptedString -Key $Key -Base64
+	'IVdYT0McSfObWOy68igNDsDDSoATbUwNSt/TFEMnu5hV' | ConvertFrom-LPEncryptedData -Key $Key -Base64
 	Decrypts the Base64 encoded encrypted string using the specified key
 	#>
-
+	[CmdletBinding(DefaultParameterSetName='String')]
 	Param (
 		[Parameter(
-			Mandatory,
+			ParameterSetName='String',
 			ValueFromPipeline,
 			ValueFromPipelineByPropertyName,
 			Position = 0
 		)]
-		[AllowEmptyString()]
-		[String[]] $Value,
+		[Char[]] $Data,
 
+		[Parameter(
+			ParameterSetName='SecureString',
+			ValueFromPipeline,
+			ValueFromPipelineByPropertyName,
+			Position = 0
+		)]
+		[SecureString] $SecureString,
+
+		#TODO: This should be a SecureString?
 		[Byte[]] $Key,
 
 		[Switch] $Base64
@@ -1555,42 +1594,54 @@ Function ConvertFrom-LPEncryptedString {
 	}
 
 	PROCESS {
-		$Value | ForEach {
-			Write-Debug "Encrypted value: $_"
+		# https://blogs.msdn.microsoft.com/fpintos/2009/06/12/how-to-properly-convert-securestring-to-string/
+		If($PSCmdlet.ParameterSetName -eq 'SecureString'){
+			#TODO: Refactor this to ConvertFrom-SecureString
+			$Data = [Char[]]::New($SecureString.Length)
 
-			If($Base64){
-				$_ = If($_[0] -eq '!'){
-					'!{0}{1}' -f (
-						$_ -split '!' -split '\|' |
-							Select -Skip 1 |
-							ForEach { [Char[]][Convert]::FromBase64String($_) -join '' }
-					)
-				}
-				Else { [Char[]][Convert]::FromBase64String($_) -join '' }
-			}
+			$Pointer = [Runtime.InteropServices.Marshal]::SecureStringToGlobalAllocUnicode($SecureString)
+			Try{ [Runtime.InteropServices.Marshal]::Copy($Pointer, $Data, 0, $SecureString.Length) }
+			Finally{ [Runtime.InteropServices.Marshal]::ZeroFreeCoTaskMemUnicode($Pointer) }
+		}
 
-			If($_[0] -eq '!' -and
-			$_.Length -gt 32 -and
-			$_.Length % 16 -eq 1){
-				Write-Debug 'CBC'
-				$AES.Mode = [CipherMode]::CBC
-				$Data = $_[17..($_.Length-1)]
-				$AES.IV = $_[1..16]
-			}
-			Else{
-				Write-Debug 'ECB'
-				$AES.Mode = [CipherMode]::ECB
-				$Data = [char[]] $_
-				$AES.IV = [Byte[]] '0'*16
-			}
-			$AES | Out-String | Write-Debug
-			$Decryptor = $AES.CreateDecryptor()
+		Write-Debug "Encrypted value $($Data.Length):"
+		Write-Debug "$($Data -join '')"
+		If($Data.length -eq 0){ Return '' }
 
+		If($Base64){
+			$Data = If($Data[0] -eq '!'){
+				$Index = $Data.IndexOf([Char] '|')
+				[Char[]] '!' +
+				[Char[]][Convert]::FromBase64CharArray($Data, 1, $Index-1) +
+				[Char[]][Convert]::FromBase64CharArray($Data, $Index+1, ($Data.Length-$Index-1))
+			}
+			Else { [Char[]][Convert]::FromBase64CharArray($Data, 0, $Data.Length)}
+		}
+
+		If(($Data[0] -eq '!') -and ($Data.Length -gt 32) -and ($Data.Length % 16 -eq 1)){
+			Write-Debug 'CBC'
+			$AES.Mode = [CipherMode]::CBC
+			$AES.IV = $Data[1..16]
+			$Data = $Data[17..($Data.Length-1)]
+		}
+		Else{
+			Write-Debug 'ECB'
+			$AES.Mode = [CipherMode]::ECB
+			$AES.IV = [Byte[]] '0'*16
+		}
+		$AES | Out-String | Write-Debug
+		$Decryptor = $AES.CreateDecryptor()
+
+		Try{
 			[Char[]] $Decryptor.TransformFinalBlock(
 				$Data,
 				0,
 				$Data.length
 			) -join ''
+		}
+		Catch{
+			Write-Error "Decryption failed. Data: $Data"
+			Throw
 		}
 	}
 }
