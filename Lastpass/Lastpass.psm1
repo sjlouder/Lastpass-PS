@@ -1354,6 +1354,7 @@ Function New-Key {
 }
 
 
+
 Function New-LoginHash {
 	<#
 	.SYNOPSIS
@@ -1415,6 +1416,7 @@ Function New-LoginHash {
 }
 
 
+
 Function Read-Item {
 	<#
 	.SYNOPSIS
@@ -1458,6 +1460,7 @@ Function Read-Item {
 	}
 
 }
+
 
 
 Function Read-ASN1Item {
@@ -1525,6 +1528,7 @@ Function Read-ASN1Item {
 }
 
 
+
 Function ConvertFrom-LPEncryptedData {
 
 	<#
@@ -1534,9 +1538,14 @@ Function ConvertFrom-LPEncryptedData {
 	.DESCRIPTION
 	Decrypts data from Lastpass blob and transmission
 	Supports CBC and ECB encryption
+	If a SecureString is passed in, the bytes are extracted and then decrypted
+	If a string is passed in, it is converted to a byte array and then decrypted
 
-	.PARAMETER Value
+	.PARAMETER Data
 	The encrypted Lastpass string to decrypt
+
+	.PARAMETER SecureString
+	The SecureString that holds an encrypted string as a byte array
 
 	.PARAMETER Key
 	If specified, this key will be used for decryption.
@@ -1647,6 +1656,7 @@ Function ConvertFrom-LPEncryptedData {
 }
 
 
+
 Function ConvertTo-LPEncryptedString {
 
 	<#
@@ -1746,6 +1756,7 @@ Function ConvertTo-LPEncryptedString {
 }
 
 
+
 #TODO: Have this output a byte array or a string
 Function ConvertFrom-Hex {
 	<#
@@ -1785,19 +1796,21 @@ Function ConvertFrom-Hex {
 }
 
 
+
 Function Confirm-Password {
 	<#
 	.SYNOPSIS
-	 Short description
+	Reprompts and reverifies the master account password
 
 	.DESCRIPTION
-	Long description
+	Prompts the user for the master password and verifies it is correct
+	If the password has been verified within the verification timeout setting, verification is skipped
+	If the password entered is incorrect, the function will throw an error
 
 	.EXAMPLE
 	Confirm-Password
-
-	.EXAMPLE
-	Confirm-Password
+	Checks whether the master password has been verified within the timeout setting,
+	and if not, prompts the user to re-enter their password and verifies it is correct.
 	#>
 
 	[CmdletBinding()]
@@ -1822,6 +1835,7 @@ Function Confirm-Password {
 }
 
 
+
 #FIXME! Remove; for debugging purposes only
 Function Get-Session {
 	<#
@@ -1842,6 +1856,7 @@ Function Get-Session {
 		Blob = $Blob
 	}
 }
+
 
 
 Function Set-Session {

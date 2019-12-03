@@ -1202,16 +1202,42 @@ InModuleScope Lastpass {
 			}
 		}
 
+		Mock Read-Host {'Password' | ConvertTo-SecureString -AsPlainText -Force }
+		Mock New-Key { $Script:Session.Key }
 
-		It 'Prompts for master password if password was last entered later than timeout' {}
+		It 'Prompts for master password if password was last entered later than timeout' {
+			$Script:PasswordTimeout = New-TimeSpan
 
-		It 'Skips check if last password check is within timeout' {}
+			Confirm-Password
+			Assert-MockCalled Read-Host -ParameterFilter {
+				$AsSecureString -and $Prompt -eq  'Please confirm your password'
+			}
+		}
 
-		It 'Throws if master password check is wrong' -Skip {
+		It 'Skips check if last password check is within timeout' {
+			$Script:PasswordTimeout = New-TimeSpan -Minutes 5
+			$Script:PasswordPrompt = [DateTime]::Now.AddMinutes(-1)
+			$ExpectedPasswordPrompt = $Script:PasswordPrompt
+
+			Confirm-Password
+			Assert-MockCalled Read-Host -Exactly -Times 0 -Scope It
+			$Script:PasswordPrompt | Should -Be $ExpectedPasswordPrompt
+		}
+
+		It 'Updates the last password verification time if successful' {
+			$Script:PasswordTimeout = New-TimeSpan
+			$Script:PasswordPrompt = [DateTime]::Now.AddMinutes(-1)
+
+			Confirm-Password
+			Assert-MockCalled Read-Host -Exactly -Times 1 -Scope It
+			Assert-MockCalled New-Key -Exactly -Times 1 -Scope It
+			$Script:PasswordPrompt.Datetime | Should -Be ([DateTime]::Now).Datetime
+		}
+
+		It 'Throws if master password check is wrong' {
 			$Script:PasswordTimeout = New-Timespan
-			($Script:Blob.Accounts | Where Name -eq 'Account1').PasswordProtect = $True
-			Mock Read-Host {'NotTheCorrectPassword' | ConvertTo-SecureString -A -F}
-			{Get-Account 'Account1'} | Should -Throw 'Password confirmation failed'
+			Mock New-Key { [Byte[]]::New(4) }
+			{ Confirm-Password } | Should -Throw 'Password confirmation failed'
 		}
 
 	}
