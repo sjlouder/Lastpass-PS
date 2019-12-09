@@ -17,6 +17,24 @@
 
 Using Namespace System.Security.Cryptography
 
+Param(
+	[ValidateScript({
+		$Schema = @{
+			ExportWriteCmdlets = 'Boolean'
+		}
+		$_.GetEnumerator() | ForEach {
+			If($_.Key -notin $Schema.Keys){
+				Throw "Unknown module parameter: $($_.Key)"
+			}
+			If($_.Value -isnot $Schema[$_.Key]){
+				Throw "Parameter '$($_.Key)' should be of type: [$($Schema[$_.Key])]"
+			}
+		}
+		Return $True
+	})]
+	[HashTable] $ModuleParameters
+)
+
 $Script:Interactive = [Environment]::UserInteractive -and
 	!([Environment]::GetCommandLineArgs() -like '-NonI*')
 $Script:Epoch = [DateTime] '1970-01-01 00:00:00'
@@ -1883,10 +1901,20 @@ Function Set-Session {
 
 }
 
-# Export-ModuleMember -Function @(
-# 	'Connect-Lastpass'
-# 	'Sync-Lastpass'
-# 	'Get-Account'
-# 	'Set-Account'
-# 	'Get-Note'
-# )
+
+$PublicMethods = @(
+	'Connect-Lastpass'
+	'Sync-Lastpass'
+	'Get-Account'
+	'Get-Note'
+	'New-Password'
+)
+
+If($ModuleParameters.ExportWriteCmdlets){
+	$PublicMethods += @(
+		'Set-Account'
+		'Set-Note'
+	)
+}
+
+Export-ModuleMember -Function $PublicMethods

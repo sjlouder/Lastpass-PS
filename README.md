@@ -30,6 +30,7 @@ $GmailAccount.Username
 $GmailAccount.Password
 
 # Update account information
+# NOTE: This is experimental! See status section below for details
 $GmailAccount | Set-Account -PasswordProtect
 
 # Generate a new secure password
@@ -40,8 +41,7 @@ For more examples, check Tests/Lastpass.Tests.ps1.
 
 
 # STATUS AND FEATURES
-This project is in early stages and is not production ready. Logging in, getting the account data, and decrypting fields has been implemented. Basic account and note updating has been implemented, but is not heavily tested.
-**Create backup copies of your data before using this project to make any modifications.**
+This project is in early stages and is not production ready. Logging in, getting the account data, and decrypting fields has been implemented.
 
 Currently supported:
 * Login
@@ -49,11 +49,21 @@ Currently supported:
 	* Duo MFA
 * Get and decrypt accounts and notes
 	* Supports shared accounts and notes
+	* Parses custom notes
 	* Supports password protection
-* Update accounts and notes
-	* **WARNING**: Not fully tested
-	* **WARNING**: Shared items not currently supported
 * Password generation
+
+Experimental/in development:
+* Update accounts and notes
+	* **WARNING**: Not fully tested. **Create backup copies of your data before using this project to make any modifications.**
+	* **WARNING**: Shared items not currently supported
+	* **WARNING**: Custom Notes not supported
+	* **NOTE**: These functions (Set-Account and Set-Note) are not exposed by default while they are in
+	development. In order to enable these functions, pass in a hashtable to the module with a key
+	named "ExportWriteCmdlets" and the value set to $True, eg:
+	```
+	Import-Module Lastpass -ArgumentList @{ EnableWriteCmdlets = $True }
+	```
 
 Planned:
 * Accounts Support
@@ -64,7 +74,6 @@ Planned:
 	* Create/delete
 	* Move
 	* Sharing
-	* Parse special types
 * Other Login methods
 	* Yubikey
 	* Sesame
@@ -97,9 +106,7 @@ Currently: download; Import-Module /Path/To/Lastpass-PS/Lastpass
 Eventually: Install-Module Lastpass #From Powershell Gallery
 
 # CONTRIBUTING
-TODO
-See Contribute wiki page.
-Tests (Pester/TDD), Design (Powershell/.NET core base)
+While this is still early in development (pre-1.0), I'm mostly looking for testers, feature ideas/priority, and help with documentation. Pull requests are welcome, but this is a side project so collaboration will likely be slow.
 
 # LICENSE
 GPLv2+. See LICENSE file for details
