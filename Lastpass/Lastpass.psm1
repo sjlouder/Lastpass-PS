@@ -212,7 +212,6 @@ Function Connect-Lastpass {
 	[Int] $Iterations = Invoke-RestMethod @Param
 	Write-Debug "Iterations: $Iterations"
 
-	#TODO: Make this return a SecureString?
 	$Key = New-Key -Credential $Credential -Iterations $Iterations
 	$Hash = New-LoginHash -Key $Key -Credential $Credential -Iterations $Iterations
 
@@ -239,9 +238,6 @@ Function Connect-Lastpass {
 		"Error received:`n{0}" -f $Response.Error.OuterXML | Write-Debug
 		Switch -Regex ($Response.Error.Cause){
 			OutOfBandRequired {
-				#TODO
-				#$Response.Error.OutOfBandType
-				#Return $Response
 				$Type = $Response.Error.OutOfBandName
 				$Capabilities = $Response.Error.Capabilities -split ','
 				If(!$Type -or !$Capabilities){ Throw 'Could not determine out-of-band type' }
@@ -637,11 +633,12 @@ Function Get-Account {
 			ValueFromPipeline,
 			ValueFromPipelineByPropertyName
 		)]
-		[String] $Name
+		[String[]] $Name
 	)
 	PROCESS {
-		If($Name){
-			$Script:Blob.Accounts | Where Name -eq $Name | ForEach {
+		If(!$Name){ Return $Script:Blob.Accounts | Select ID, Name }
+		$Name | ForEach {
+			$Script:Blob.Accounts | Where Name -eq $_ | ForEach {
 				If($_.PasswordProtect){ Confirm-Password }
 
 				$Account = @{}
@@ -675,8 +672,6 @@ Function Get-Account {
 				[PSCustomObject] $Account | Write-Output
 			}
 		}
-		Else{ $Script:Blob.Accounts | Select ID, Name | Write-Output }
-
 	}
 }
 
@@ -786,7 +781,6 @@ Function Set-Account {
 }
 
 
-
 Function Get-Note {
 	<#
 	.SYNOPSIS
@@ -816,51 +810,52 @@ Function Get-Note {
 			ValueFromPipeline,
 			ValueFromPipelineByPropertyName
 		)]
-		[String] $Name
+		[String[]] $Name
 	)
-	If($Name){
-		$Script:Blob.SecureNotes | Where Name -eq $Name | ForEach {
-			If($_.PasswordProtect){ Confirm-Password }
+	PROCESS {
+		If(!$Name){ Return $Script:Blob.SecureNotes | Select ID, Name }
+		$Name | ForEach {
+			$Script:Blob.SecureNotes | Where Name -eq $_ | ForEach {
+				If($_.PasswordProtect){ Confirm-Password }
 
-			$Note = @{}
-			$Param = @{}
-			If($_.ShareFolderID){
-				$Param.Key = $Blob.SharedFolders |
-					Where ID -eq $_.ShareFolderID |
-					ForEach Key
-			}
-
-			$_.GetEnumerator() | ForEach {
-				If($_.Value -isnot [SecureString]){
-					$Note[$_.Key] = $_.Value
+				$Note = @{}
+				$Param = @{}
+				If($_.ShareFolderID){
+					$Param.Key = $Blob.SharedFolders |
+						Where ID -eq $_.ShareFolderID |
+						ForEach Key
 				}
-				Else{
-					$Param.SecureString = $_.Value
-					$Note[$_.Key] = ConvertFrom-LPEncryptedData @Param
-				}
-			}
 
-			If(
-				$Note.Notes -match ('^NoteType:(.*)') -and (
-					$Matches[1] -in $Schema.SecureNote.Types.Values -or
-					$Matches[1] -match '^Custom_(\d+)$'
-				)
-			){
-				'Custom Note: {0}' -f $Matches[1] | Write-Debug
-				$Note.Notes -split "`n" | ForEach {
-					If(($Split = $_.IndexOf(':')) -ne -1){
-						$Key = $_.Substring(0,$Split)
-						$Note[$Key] = $_.Substring(($Split+1))
+				$_.GetEnumerator() | ForEach {
+					If($_.Value -isnot [SecureString]){
+						$Note[$_.Key] = $_.Value
 					}
-					Else{ $Note[$Key] += "`n$_" }
+					Else{
+						$Param.SecureString = $_.Value
+						$Note[$_.Key] = ConvertFrom-LPEncryptedData @Param
+					}
 				}
+
+				If(
+					$Note.Notes -match ('^NoteType:(.*)') -and (
+						$Matches[1] -in $Schema.SecureNote.Types.Values -or
+						$Matches[1] -match '^Custom_(\d+)$'
+					)
+				){
+					'Custom Note: {0}' -f $Matches[1] | Write-Debug
+					$Note.Notes -split "`n" | ForEach {
+						If(($Split = $_.IndexOf(':')) -ne -1){
+							$Key = $_.Substring(0,$Split)
+							$Note[$Key] = $_.Substring(($Split+1))
+						}
+						Else{ $Note[$Key] += "`n$_" }
+					}
+				}
+				$Note.LastAccessed = [DateTime]::Now
+				[PSCustomObject] $Note | Write-Output
 			}
-			$Note.LastAccessed = [DateTime]::Now
-			[PSCustomObject] $Note | Write-Output
 		}
 	}
-	Else{ $Script:Blob.SecureNotes | Select ID, Name | Write-Output }
-
 }
 
 
@@ -1029,7 +1024,6 @@ Function New-Password {
 	$RNG = [RNGCryptoServiceProvider]::New()
 	$Bytes = [Byte[]]::New(4)
 
-	#TODO: What if none are provided?
 	Switch($PSCmdlet.ParameterSetName){
 		InvalidCharacters { $Filter = "[$InvalidCharacters]" }
 		ValidCharacters { $Filter = "[^$ValidCharacters]" }
@@ -1452,10 +1446,10 @@ Function Read-Item {
 	$Size = $Blob[$Index..($Index+=3)]
 	If([BitConverter]::IsLittleEndian){ [Array]::Reverse($Size) }
 	$Size = [BitConverter]::ToUInt32($Size,0)
-	# Write-Debug "Size: $Size"
+	Write-Debug "Size: $Size"
 	If($Size){
 		$Data = $Blob[($Index+=1)..(($Index+=$Size)-1)]
-		# Write-Debug "Data: $Data"
+		Write-Debug "Data: $Data"
 		Write-Output $Data
 	}
 
@@ -1585,7 +1579,6 @@ Function ConvertFrom-LPEncryptedData {
 		)]
 		[SecureString] $SecureString,
 
-		#TODO: This should be a SecureString?
 		[Byte[]] $Key,
 
 		[Switch] $Base64
@@ -1605,7 +1598,6 @@ Function ConvertFrom-LPEncryptedData {
 	PROCESS {
 		# https://blogs.msdn.microsoft.com/fpintos/2009/06/12/how-to-properly-convert-securestring-to-string/
 		If($PSCmdlet.ParameterSetName -eq 'SecureString'){
-			#TODO: Refactor this to ConvertFrom-SecureString
 			$Data = [Char[]]::New($SecureString.Length)
 
 			$Pointer = [Runtime.InteropServices.Marshal]::SecureStringToGlobalAllocUnicode($SecureString)
@@ -1757,7 +1749,6 @@ Function ConvertTo-LPEncryptedString {
 
 
 
-#TODO: Have this output a byte array or a string
 Function ConvertFrom-Hex {
 	<#
 	.SYNOPSIS

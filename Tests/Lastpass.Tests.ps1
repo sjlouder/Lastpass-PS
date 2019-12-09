@@ -572,13 +572,9 @@ InModuleScope Lastpass {
 			}
 		}
 	}
-
 	Describe Get-Account {
 
 		BeforeAll {
-			#TODO: The username,password, and notes should be stored as the parsed encrypted bytes,
-			# not the decrypted value
-
 			$Script:Blob = Get-Content $ScriptRoot/ParsedVault.json | ConvertFrom-Json -AsHashtable
 			$Script:Blob.Accounts | ForEach {
 				$Account = $_
@@ -596,6 +592,7 @@ InModuleScope Lastpass {
 				Username = 'Username'
 				Iterations = '1'
 			}
+			$ExpectedAccounts = (Get-Content $ScriptRoot/DecryptedVault.json | ConvertFrom-Json -AsHashTable).Accounts
 		}
 
 		$Result = Get-Account
@@ -617,6 +614,7 @@ InModuleScope Lastpass {
 			}
 		}
 
+		$Expected = $ExpectedAccounts | Where Name -eq 'Account1'
 		$Result = Get-Account 'Account1'
 		$Now = [DateTime]::Now
 
@@ -629,15 +627,15 @@ InModuleScope Lastpass {
 		}
 
 		It 'Decrypts the folder' {
-			$Result.Group | Should -Be 'ParentFolder'
+			$Result.Group | Should -Be $Expected.Group
 		}
 
 		It 'Decrypts the username' {
-			$Result.Username | Should -Be 'ThisIsTheUsername'
+			$Result.Username | Should -Be $Expected.Username
 		}
 
 		It 'Decrypts the note content' {
-			$Result.Notes | Should -Be 'These are arbitrary Notes attached to the Account'
+			$Result.Notes | Should -Be $Expected.Notes
 		}
 
 		It 'Updates the LastAccessed time' {
@@ -656,10 +654,6 @@ InModuleScope Lastpass {
 			Get-Account 'Account1'
 
 			Assert-MockCalled Confirm-Password
-			# Assert-MockCalled Read-Host -ParameterFilter {
-			# 	$Prompt -eq 'Please confirm your password' -and
-			# 	$AsSecureString
-			# }
 		}
 
 		It 'Creates a PSCredential property' {
@@ -712,9 +706,6 @@ InModuleScope Lastpass {
 	Describe Get-Note {
 
 		BeforeAll {
-			#TODO: The notes should be stored as the blob bytes, not the decrypted value
-			# Create test data that includes the parsed encypted bytes of the encrypted properties
-			# Shared folder key may not be correct
 			$Script:Blob = Get-Content $ScriptRoot/ParsedVault.json | ConvertFrom-Json -AsHashtable
 			$Script:Blob.SecureNotes | ForEach { $_.Notes = ConvertTo-SecureString -A -F $_.Notes }
 			$Script:Blob.SharedFolders | ForEach { $_.Key = [Byte[]][Char[]] $_.Key }
@@ -748,8 +739,8 @@ InModuleScope Lastpass {
 
 		}
 
-		$Result = Get-Note 'test'
 		$Expected = $ExpectedNotes | Where Name -eq 'test'
+		$Result = Get-Note 'test'
 		$Now = [DateTime]::Now
 
 		It 'Returns a note by name' {
@@ -771,8 +762,13 @@ InModuleScope Lastpass {
 		# Custom note
 		$Result = Get-Note 'Note In Folder'
 		$Expected = $ExpectedNotes | Where Name -eq 'Note In Folder'
-		It 'Prompts for password if note requires it' {
-			# Mock Confirm-Password
+		It 'Prompts for password if note is password protected' {
+			($Script:Blob.SecureNotes |
+				Where Name -eq 'test').PasswordProtect = $True
+			Mock Confirm-Password
+			Get-Note 'test'
+
+			Assert-MockCalled Confirm-Password
 		}
 
 		It 'Parses custom note properties and exposes them as properties' {
