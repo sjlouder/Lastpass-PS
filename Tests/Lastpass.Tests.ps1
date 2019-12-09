@@ -1,4 +1,4 @@
-Import-Module -Force $PSScriptRoot/../Lastpass -Verbose:$False
+Import-Module -Force $PSScriptRoot/../Lastpass -ArgumentList @{ ExportWriteCmdlets = $True } -Verbose:$False
 
 InModuleScope Lastpass {
 
