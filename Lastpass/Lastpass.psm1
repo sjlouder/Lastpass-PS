@@ -705,23 +705,17 @@ Function Set-Account {
 	Does a full overwrite (ie. any parameters not included will be
 	deleted if they existed as part of the account previously)
 
-	.PARAMETER ID
-	The ID of the account
+	.PARAMETER Account
+	The Lastpass account to update
 
 	.PARAMETER Name
 	The name of the account
 
-	.PARAMETER Folder
-	The directory path that contains the account
-
 	.PARAMETER URL
 	The URL of the account
 
-	.PARAMETER Username
-	The username of the account
-
-	.PARAMETER Password
-	The password of the account
+	.PARAMETER Credential
+	The account credentials
 
 	.PARAMETER Notes
 	The notes tied to the account
@@ -754,29 +748,17 @@ Function Set-Account {
 
 	[CmdletBinding()]
 	Param(
-		[Parameter(
-			Mandatory,
-			ValueFromPipelineByPropertyName
-		)]
-		[String] $ID,
-
-		[Parameter(
-			Mandatory,
-			ValueFromPipelineByPropertyName
-		)]
-		[String] $Name,
+		[Parameter(Mandatory, ValueFromPipeline)]
+		[PSTypeName('Lastpass.Account')] $Account,
 
 		[Parameter(ValueFromPipelineByPropertyName)]
-		[String] $Folder,
+		[String] $Name,
 
 		[Parameter(ValueFromPipelineByPropertyName)]
 		[String] $URL,
 
 		[Parameter(ValueFromPipelineByPropertyName)]
-		[String] $Username,
-
-		[Parameter(ValueFromPipelineByPropertyName)]
-		[String] $Password,
+		[PSCredential] $Credential,
 
 		[Parameter(ValueFromPipelineByPropertyName)]
 		[String] $Notes,
@@ -794,9 +776,28 @@ Function Set-Account {
 		[Switch] $DisableAutofill
 	)
 
-	Set-Item @PSBoundParameters
+	"Set-Account called with parameters:`n{0}" -f ($PSBoundParameters | Out-String) | Write-Debug
+
+	$Param = @{
+		ID				= $Account.ID
+		Name			= $Name
+		Folder			= $Account.Folder
+		URL				= $URL
+		Credential		= $Credential
+		Notes			= $Notes
+		PasswordProtect	= $PasswordProtect
+		Favorite		= $Favorite
+		AutoLogin		= $AutoLogin
+		DisableAutofill	= $DisableAutofill
+	}
+	If($Account.ShareFolderID){ $Param.ShareFolderID = $Account.ShareFolderID }
+
+
+	"Calling Set-Item with parameters:`n{0}" -f ($Param | Out-String) | Write-Debug
+	Set-Item @Param
 
 }
+
 
 
 Function Get-Note {
@@ -861,13 +862,15 @@ Function Get-Note {
 					)
 				){
 					'Custom Note: {0}' -f $Matches[1] | Write-Debug
+					$Notes = @{}
 					$Note.Notes -split "`n" | ForEach {
 						If(($Split = $_.IndexOf(':')) -ne -1){
 							$Key = $_.Substring(0,$Split)
-							$Note[$Key] = $_.Substring(($Split+1))
+							$Notes[$Key] = $_.Substring(($Split+1))
 						}
-						Else{ $Note[$Key] += "`n$_" }
+						Else{ $Notes[$Key] += "`n$_" }
 					}
+					$Note.Notes = [PSCustomObject] $Notes
 				}
 				$Note.LastAccessed = [DateTime]::Now
 				[PSCustomObject] $Note | Write-Output
@@ -877,7 +880,7 @@ Function Get-Note {
 }
 
 
-
+#TODO: Custom note parsing
 Function Set-Note {
 	<#
 	.SYNOPSIS
@@ -945,6 +948,8 @@ Function Set-Note {
 		[Parameter(ValueFromPipelineByPropertyName)]
 		[Switch] $Favorite
 	)
+
+	# If custom note, 
 
 	Set-Item -SecureNote @PSBoundParameters
 
@@ -1201,6 +1206,9 @@ Function Set-Item {
 		[Parameter(ValueFromPipelineByPropertyName)]
 		[String] $Folder,
 
+		[Parameter(ValueFromPipelineByPropertyName)]
+		[String] $ShareFolderID,
+
 		[Parameter(
 			ParameterSetName='Account',
 			ValueFromPipelineByPropertyName
@@ -1211,13 +1219,7 @@ Function Set-Item {
 			ParameterSetName='Account',
 			ValueFromPipelineByPropertyName
 		)]
-		[String] $Username,
-
-		[Parameter(
-			ParameterSetName='Account',
-			ValueFromPipelineByPropertyName
-		)]
-		[String] $Password,
+		[PSCredential] $Credential,
 
 		[Parameter(ValueFromPipelineByPropertyName)]
 		[Alias('Content','Extra')]
@@ -1259,12 +1261,50 @@ Function Set-Item {
 	}
 
 	PROCESS {
+
+		# If shared
+		# 	If share is Readonly, Throw
+		#	append share id
+		#	strip shared folder name from Folder/grouping property
+		# Get account
+		# Check if editable (IsShared and Share.ReadOnly)
+		# Update modified property(ies)
+		# 	generate new encrypted value (with new IV)
+		# 	set unencrypted value
+		# update_account
+		# 	show_website.php
+		# 		extjs = 1
+		# 		token = $Token
+		# 		method = 'cli'
+		# 		name = $Account.Name (encrypted)
+		# 		grouping = $Account.Folder.Name (encrypted)
+		# 		pwprotect = 'on'/'off'
+		# 		aid = $Account.ID
+		# 		url = $Account.URL (hex)
+		# 		username = $Account.Username (encrypted)
+		# 		password = $Account.Password (encrypted)
+		# 		extra = $Account.Notes (encrypted)
+		# 		If $Account.SharedFolderID
+		# 			sharedfolderid = $Account > Share.ID
+		# save blob
+
+
+		If($ShareFolderID){
+			If(($Blob.SharedFolders | Where ID -eq $ShareFolderID).ReadOnly){
+				$Type = If($SecureNote){ 'Note' }Else{ 'Account' }
+				Write-Error ('{0} {1} is in a read-only shared folder' -f ($Type, $Name))
+			}
+			$Body = @{ sharedfolderid = $ShareFolderID }
+			$Folder = $Folder.Substring($Folder.IndexOf('\') + 1)
+		}
+
 		If($SecureNote){ $URL = 'http://sn' }
-		$Body = @{
+		$Body += @{
 			aid		 = $ID
 			name	 = $Name | ConvertTo-LPEncryptedString
 			grouping = $Folder | ConvertTo-LPEncryptedString
 			url		 = ([Byte[]][Char[]] $URL | ForEach { "{0:x2}" -f $_ }) -join ''
+			#TODO: Custom Note
 			extra	 = $Notes | ConvertTo-LPEncryptedString
 			<#
 			folder = 'user'		#, 'none', or name of default folder
@@ -1280,8 +1320,8 @@ Function Set-Item {
 		}
 
 		If(!$SecureNote){
-			$Body.username = $Username | ConvertTo-LPEncryptedString
-			$Body.password = $Password | ConvertTo-LPEncryptedString
+			$Body.username = $Credential.Username | ConvertTo-LPEncryptedString
+			$Body.password = $Credential.GetNetworkCredential().Password | ConvertTo-LPEncryptedString
 			If($AutoLogin){ $Body.autologin = 'on' }
 			If($DisableAutofill){ $Body.never_autofill = 'on' }
 		}
@@ -1298,7 +1338,6 @@ Function Set-Item {
 			}
 			'AccountUpdated' {
 
-				Break
 			}
 			Default {
 				Throw ("Failed to update {0}.`n{1}" -f @(

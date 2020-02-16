@@ -572,6 +572,7 @@ InModuleScope Lastpass {
 			}
 		}
 	}
+
 	Describe Get-Account {
 
 		BeforeAll {
@@ -667,7 +668,13 @@ InModuleScope Lastpass {
 
 		Mock Set-Item
 
+		# Just pass account, it passes the properties
+		# If parameter is passed, it overrides the account value
+		# Pipeline
+		# Non-pipeline
+
 		$Account = [PSCustomObject] @{
+			PSTypeName	 = 'Lastpass.Account'
 			ID           = '5148901049320353252'
 			Name         = 'sitename'
 			URL          = 'http://url.com'
@@ -693,14 +700,52 @@ InModuleScope Lastpass {
 				$Name		-eq 'sitename' -and
 				$Folder		-eq 'NewFolder1\NewFolder2' -and
 				$URL		-eq 'http://url.com' -and
-				$Username	-eq 'usernamehere2' -and
-				$Password	-eq 'fdsafdasfda' -and
+				$Credential -eq $Account.Credential -and
 				$Notes		-eq 'notecontent3' -and
 				!$Favorite	-and
 				!$AutoLogin	-and
 				!$DisableAutofill
 			}
 		}
+
+		$Account = [PSCustomObject] @{
+			PSTypeName		= 'Lastpass.Account'
+			ID          	= '5148901937320353252'
+			Name        	= 'sitename21321'
+			URL         	= 'http://url.com'
+			Folder      	= 'NewFolder1\NewFolder3'
+			ShareFolderID	= 10249432
+			Username     	= 'usernamehere2'
+			Credential   	= [PSCredential]::New(
+									'usernamehere2',
+									(ConvertTo-SecureString -A -F 'fdsafdasfda')
+								)
+			Notes        	= 'notecontent3'
+			Favorite     	= $False
+			LastModified 	= [DateTime] '4/3/19 4:58:05 AM'
+			LastAccessed 	= [DateTime] '4/4/19 1:42:48 AM'
+			LaunchCount  	= 0
+			Bookmark     	= $False
+			Password     	= 'fdsafdasfda'
+		}
+
+		It 'Includes the ShareFolderID if the account is shared' {
+			$Account | Set-Account
+			Assert-MockCalled Set-Item -Scope It -ParameterFilter {
+				$ID				-eq '5148901937320353252' -and
+				$Name			-eq 'sitename21321' -and
+				$Folder			-eq 'NewFolder1\NewFolder3' -and
+				$ShareFolderID	-eq 10249432 -and
+				$URL			-eq 'http://url.com' -and
+				$Credential 	-eq $Account.Credential -and
+				$Notes			-eq 'notecontent3' -and
+				!$Favorite		-and
+				!$AutoLogin		-and
+				!$DisableAutofill
+			}
+		}
+
+
 	}
 
 	Describe Get-Note {
@@ -778,7 +823,7 @@ InModuleScope Lastpass {
 			'Password',
 			'Notes' | ForEach {
 				If($Expected.$_){
-					$Result.$_ | Should -Be $Expected.$_
+					$Result.Notes.$_ | Should -Be $Expected.$_
 				}
 			}
 
@@ -861,7 +906,7 @@ InModuleScope Lastpass {
 	}
 
 	Describe Set-Item {
-
+		#TODO: Folder property may have share, need to extract it?
 		BeforeAll {
 			$Script:Blob = Get-Content $ScriptRoot/ParsedVault.json | ConvertFrom-Json -AsHashtable
 			$Script:Session = [PSCustomObject] @{
@@ -915,6 +960,7 @@ InModuleScope Lastpass {
 		Mock Sync-Lastpass {}
 
 		$Account = [PSCustomObject] @{
+			PSTypeName	 = 'Lastpass.Account'
 			ID           = '5148901049320353252'
 			Name         = 'sitename'
 			URL          = 'http://url.com'
@@ -936,12 +982,21 @@ InModuleScope Lastpass {
 		# Test non-pipeline use case
 		# Set-Account -ID $Account.ID -Name 'NoteName' -PasswordProtect
 		#TODO: Test multiline notes
+		#TODO: Test incomplete account/parameters
+		#TODO: Shared item
 
-		$Result = $Account | Set-Item -Username 'NewUsername' -Password 'newPassword'
+		$Credential = [PSCredential]::New(
+			'NewUsername',
+			(ConvertTo-SecureString -A -F 'NewPassword')
+		)
+
+		$Result = $Account | Set-Item -Credential $Credential
 
 
 		It 'Calls the edit account API' {
-			Assert-MockCalled Invoke-RestMethod
+			Assert-MockCalled Invoke-RestMethod -ParameterFilter {
+				$URI -eq 'https://lastpass.com/show_website.php'
+			}
 		}
 
 		It 'Encrypts the Account Name' {
@@ -1020,6 +1075,25 @@ InModuleScope Lastpass {
 			$Result.Password | Should -Be 'newPassword'
 		}
 
+
+		Context 'Shared Account' {
+			$Account | Add-Member -MemberType 'NoteProperty' -Name 'ShareFolderID' -Value 123456
+			$Account.Folder = 'SharedFolder\{0}' -f $Account.Folder
+
+			$Account | Set-Account
+
+			It 'Includes the sharedfolderid parameter' {
+				Assert-MockCalled Invoke-RestMethod -Scope Context -ParameterFilter {
+					$Body.SharedFolderID -eq 123456
+				}
+			}
+
+			It 'Strips the Shared folder name from the folder property' {
+				Assert-MockCalled Invoke-RestMethod -Scope Context -ParameterFilter {
+					($Body.Grouping | ConvertFrom-LPEncryptedData -Base64) -eq 'NewFolder1\NewFolder2'
+				}
+			}
+		}
 		#LastAccessed/LastModified?
 
 		$Note = [PSCustomObject] @{
