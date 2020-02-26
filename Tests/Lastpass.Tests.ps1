@@ -1082,6 +1082,8 @@ InModuleScope Lastpass {
 
 			$Account | Set-Account
 
+			It 'Throws if the share is readonly' {}
+
 			It 'Includes the sharedfolderid parameter' {
 				Assert-MockCalled Invoke-RestMethod -Scope Context -ParameterFilter {
 					$Body.SharedFolderID -eq 123456
@@ -1093,6 +1095,11 @@ InModuleScope Lastpass {
 					($Body.Grouping | ConvertFrom-LPEncryptedData -Base64) -eq 'NewFolder1\NewFolder2'
 				}
 			}
+
+			It 'Uses the shared folder key to encrypt the account information' {}
+
+
+
 		}
 		#LastAccessed/LastModified?
 

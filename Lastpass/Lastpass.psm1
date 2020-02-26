@@ -104,7 +104,7 @@ $Script:Schema = @{
 			'LastAccessed'
 			'LastModifiedGMT'
 			'LastPasswordChange'
-			'ShareFolderID'
+			'ShareID'
 		)
 		DefaultFields = @(
 			'Name'
@@ -141,7 +141,7 @@ $Script:Schema = @{
 			'LastAccessed'
 			'LastModifiedGMT'
 			'LastPasswordChange'
-			'ShareFolderID'
+			'ShareID'
 		)
 		DefaultFields = @(
 			'Name'
@@ -547,7 +547,7 @@ Function Sync-Lastpass {
 						$Account.Group = '{0}\{1}'-f $Blob.SharedFolders[-1].Name, $Account.Group
 					}
 					Else{ $Account.Group = $Blob.SharedFolders[-1].Name }
-					$Account.ShareFolderID = $Blob.SharedFolders[-1].ID
+					$Account.ShareID = $Blob.SharedFolders[-1].ID
 				}
 
 				Switch($Account.URL){
@@ -661,9 +661,9 @@ Function Get-Account {
 
 				$Account = @{}
 				$Param = @{}
-				If($Account.ShareFolderID){
+				If($_.ShareID){
 					$Param.Key = $Blob.SharedFolders |
-						Where ID -eq $Account.ShareFolderID |
+						Where ID -eq $_.ShareID |
 						ForEach Key
 				}
 
@@ -790,7 +790,7 @@ Function Set-Account {
 		AutoLogin		= $AutoLogin
 		DisableAutofill	= $DisableAutofill
 	}
-	If($Account.ShareFolderID){ $Param.ShareFolderID = $Account.ShareFolderID }
+	If($Account.ShareID){ $Param.ShareID = $Account.ShareID }
 
 
 	"Calling Set-Item with parameters:`n{0}" -f ($Param | Out-String) | Write-Debug
@@ -839,9 +839,9 @@ Function Get-Note {
 
 				$Note = @{}
 				$Param = @{}
-				If($_.ShareFolderID){
+				If($_.ShareID){
 					$Param.Key = $Blob.SharedFolders |
-						Where ID -eq $_.ShareFolderID |
+						Where ID -eq $_.ShareID |
 						ForEach Key
 				}
 
@@ -862,15 +862,15 @@ Function Get-Note {
 					)
 				){
 					'Custom Note: {0}' -f $Matches[1] | Write-Debug
-					$Notes = @{}
+					$Notes = [Ordered] @{}
 					$Note.Notes -split "`n" | ForEach {
-						If(($Split = $_.IndexOf(':')) -ne -1){
+						If(($Split = $_.IndexOf(':')) -ge 1){
 							$Key = $_.Substring(0,$Split)
 							$Notes[$Key] = $_.Substring(($Split+1))
 						}
 						Else{ $Notes[$Key] += "`n$_" }
 					}
-					$Note.Notes = [PSCustomObject] $Notes
+					$Note.Notes = $Notes
 				}
 				$Note.LastAccessed = [DateTime]::Now
 				[PSCustomObject] $Note | Write-Output
@@ -880,7 +880,6 @@ Function Get-Note {
 }
 
 
-#TODO: Custom note parsing
 Function Set-Note {
 	<#
 	.SYNOPSIS
@@ -891,16 +890,13 @@ Function Set-Note {
 	Does a full overwrite (ie. any parameters not included will be
 	deleted if they existed as part of the note previously)
 
-	.PARAMETER ID
-	The ID of the note
+	.PARAMETER Note
+	The Lastpass secure note to update
 
 	.PARAMETER Name
 	The name of the note
 
-	.PARAMETER Folder
-	The directory path that contains the note
-
-	.PARAMETER Content
+	.PARAMETER Notes
 	The content of the note
 
 	.PARAMETER PasswordProtect
@@ -924,11 +920,8 @@ Function Set-Note {
 
 	[CmdletBinding()]
 	Param(
-		[Parameter(
-			Mandatory,
-			ValueFromPipelineByPropertyName
-		)]
-		[String] $ID,
+		[Parameter(Mandatory, ValueFromPipeline)]
+		[PSTypeName('Lastpass.SecureNote')] $Note,
 
 		[Parameter(
 			Mandatory,
@@ -937,10 +930,7 @@ Function Set-Note {
 		[String] $Name,
 
 		[Parameter(ValueFromPipelineByPropertyName)]
-		[String] $Folder,
-
-		[Parameter(ValueFromPipelineByPropertyName)]
-		[String] $Content,
+		[Object] $Notes,
 
 		[Parameter(ValueFromPipelineByPropertyName)]
 		[Switch] $PasswordProtect,
@@ -949,7 +939,25 @@ Function Set-Note {
 		[Switch] $Favorite
 	)
 
-	# If custom note, 
+	$Param = @{
+		ID				= $Note.ID
+		Name			= $Name
+		Folder			= $Note.Folder
+		Notes			= $Notes
+		PasswordProtect	= $PasswordProtect
+		Favorite		= $Favorite
+	}
+
+	If($Note.ShareID){
+		$Param.ShareID = $Note.ShareID
+	}
+
+	If($Notes -is [Collections.Specialized.OrderedDictionary]){
+		$Param.Notes = ''
+		$Notes.GetEnumerator() | ForEach {
+			$Param.Notes += "{0}:{1}`n" -f $_.Key, $_.Value
+		}
+	}
 
 	Set-Item -SecureNote @PSBoundParameters
 
@@ -1207,7 +1215,7 @@ Function Set-Item {
 		[String] $Folder,
 
 		[Parameter(ValueFromPipelineByPropertyName)]
-		[String] $ShareFolderID,
+		[String] $ShareID,
 
 		[Parameter(
 			ParameterSetName='Account',
@@ -1289,23 +1297,23 @@ Function Set-Item {
 		# save blob
 
 
-		If($ShareFolderID){
-			If(($Blob.SharedFolders | Where ID -eq $ShareFolderID).ReadOnly){
+		If($ShareID){
+			If(($Blob.SharedFolders | Where ID -eq $ShareID).ReadOnly){
 				$Type = If($SecureNote){ 'Note' }Else{ 'Account' }
 				Write-Error ('{0} {1} is in a read-only shared folder' -f ($Type, $Name))
 			}
-			$Body = @{ sharedfolderid = $ShareFolderID }
+			$Body = @{ sharedfolderid = $ShareID }
 			$Folder = $Folder.Substring($Folder.IndexOf('\') + 1)
+			$Key = @{ Key = $Blob.SharedFolders | Where ID -eq $ShareID | Select -Expand Key }
 		}
 
 		If($SecureNote){ $URL = 'http://sn' }
 		$Body += @{
 			aid		 = $ID
-			name	 = $Name | ConvertTo-LPEncryptedString
-			grouping = $Folder | ConvertTo-LPEncryptedString
+			name	 = $Name | ConvertTo-LPEncryptedString @Key
+			grouping = $Folder | ConvertTo-LPEncryptedString @Key
 			url		 = ([Byte[]][Char[]] $URL | ForEach { "{0:x2}" -f $_ }) -join ''
-			#TODO: Custom Note
-			extra	 = $Notes | ConvertTo-LPEncryptedString
+			extra	 = $Notes | ConvertTo-LPEncryptedString @Key
 			<#
 			folder = 'user'		#, 'none', or name of default folder
 			#localupdate = 1	# ?
@@ -1318,6 +1326,8 @@ Function Set-Item {
 			#data = ""			# Used for app fields?
 			#>
 		}
+		If($PasswordProtect){ $Body.pwprotect = 'on' }
+		If($Favorite){ $Body.fav = 'on' }
 
 		If(!$SecureNote){
 			$Body.username = $Credential.Username | ConvertTo-LPEncryptedString
@@ -1326,8 +1336,6 @@ Function Set-Item {
 			If($DisableAutofill){ $Body.never_autofill = 'on' }
 		}
 
-		If($PasswordProtect){ $Body.pwprotect = 'on' }
-		If($Favorite){ $Body.fav = 'on' }
 		"Request Parameters:`n{0}" -f ($Body | Out-String) | Write-Debug
 		$Response = Invoke-RestMethod @Param -Body ($BodyBase + $Body)
 		$Response.OuterXML | Out-String | Write-Debug
