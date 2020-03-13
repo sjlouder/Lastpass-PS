@@ -948,9 +948,7 @@ Function Set-Note {
 		Favorite		= $Favorite
 	}
 
-	If($Note.ShareID){
-		$Param.ShareID = $Note.ShareID
-	}
+	If($Note.ShareID){ $Param.ShareID = $Note.ShareID }
 
 	If($Notes -is [Collections.Specialized.OrderedDictionary]){
 		$Param.Notes = ''
@@ -958,8 +956,7 @@ Function Set-Note {
 			$Param.Notes += "{0}:{1}`n" -f $_.Key, $_.Value
 		}
 	}
-
-	Set-Item -SecureNote @PSBoundParameters
+	Set-Item @Param
 
 }
 
@@ -1304,16 +1301,16 @@ Function Set-Item {
 			}
 			$Body = @{ sharedfolderid = $ShareID }
 			$Folder = $Folder.Substring($Folder.IndexOf('\') + 1)
-			$Key = @{ Key = $Blob.SharedFolders | Where ID -eq $ShareID | Select -Expand Key }
+			$Key = $Blob.SharedFolders | Where ID -eq $ShareID | Select -Expand Key
 		}
 
 		If($SecureNote){ $URL = 'http://sn' }
 		$Body += @{
 			aid		 = $ID
-			name	 = $Name | ConvertTo-LPEncryptedString @Key
-			grouping = $Folder | ConvertTo-LPEncryptedString @Key
+			name	 = $Name | ConvertTo-LPEncryptedString -Key $Key
+			grouping = $Folder | ConvertTo-LPEncryptedString -Key $Key
 			url		 = ([Byte[]][Char[]] $URL | ForEach { "{0:x2}" -f $_ }) -join ''
-			extra	 = $Notes | ConvertTo-LPEncryptedString @Key
+			extra	 = $Notes | ConvertTo-LPEncryptedString -Key $Key
 			<#
 			folder = 'user'		#, 'none', or name of default folder
 			#localupdate = 1	# ?
@@ -1330,8 +1327,9 @@ Function Set-Item {
 		If($Favorite){ $Body.fav = 'on' }
 
 		If(!$SecureNote){
-			$Body.username = $Credential.Username | ConvertTo-LPEncryptedString
-			$Body.password = $Credential.GetNetworkCredential().Password | ConvertTo-LPEncryptedString
+			$Body.username = $Credential.Username | ConvertTo-LPEncryptedString -Key $Key
+			$Body.password = $Credential.GetNetworkCredential().Password |
+				ConvertTo-LPEncryptedString -Key $Key
 			If($AutoLogin){ $Body.autologin = 'on' }
 			If($DisableAutofill){ $Body.never_autofill = 'on' }
 		}

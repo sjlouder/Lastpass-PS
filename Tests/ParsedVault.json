@@ -152,7 +152,7 @@
       "LastPasswordChange": "1565839349",
       "DateCreated": "1565839349",
       "Vulnerable": null,
-      "ShareFolderID": "259212291"
+      "ShareID": "259212291"
     },
     {
       "ID": "6274670822055333050",
@@ -191,7 +191,7 @@
       "LastPasswordChange": "1565839386",
       "DateCreated": "1565839386",
       "Vulnerable": null,
-      "ShareFolderID": "259213521"
+      "ShareID": "259213521"
     }
   ],
   "SecureNotes": [
@@ -266,7 +266,7 @@
       "LastPasswordChange": "1565839063",
       "DateCreated": "1565839063",
       "Vulnerable": null,
-      "ShareFolderID": "259213521"
+      "ShareID": "259213521"
     }
   ],
   "Folders": [
@@ -406,7 +406,7 @@
       "breached": "0",
       "template": "",
       "fields": [],
-      "sharefolderid": "259212291",
+      "ShareID": "259212291",
       "unencryptedUsername": "usern"
     },
     {
@@ -453,7 +453,7 @@
       "breached": "0",
       "template": "",
       "fields": [],
-      "sharefolderid": "259213521",
+      "ShareID": "259213521",
       "unencryptedUsername": ""
     }
   ],

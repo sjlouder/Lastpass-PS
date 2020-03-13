@@ -707,35 +707,15 @@ InModuleScope Lastpass {
 				!$DisableAutofill
 			}
 		}
+		$Account | Add-Member -Type NoteProperty -Name ShareID -Value 10249432
 
-		$Account = [PSCustomObject] @{
-			PSTypeName		= 'Lastpass.Account'
-			ID          	= '5148901937320353252'
-			Name        	= 'sitename21321'
-			URL         	= 'http://url.com'
-			Folder      	= 'NewFolder1\NewFolder3'
-			ShareFolderID	= 10249432
-			Username     	= 'usernamehere2'
-			Credential   	= [PSCredential]::New(
-									'usernamehere2',
-									(ConvertTo-SecureString -A -F 'fdsafdasfda')
-								)
-			Notes        	= 'notecontent3'
-			Favorite     	= $False
-			LastModified 	= [DateTime] '4/3/19 4:58:05 AM'
-			LastAccessed 	= [DateTime] '4/4/19 1:42:48 AM'
-			LaunchCount  	= 0
-			Bookmark     	= $False
-			Password     	= 'fdsafdasfda'
-		}
-
-		It 'Includes the ShareFolderID if the account is shared' {
+		It 'Includes the ShareID if the account is shared' {
 			$Account | Set-Account
 			Assert-MockCalled Set-Item -Scope It -ParameterFilter {
-				$ID				-eq '5148901937320353252' -and
-				$Name			-eq 'sitename21321' -and
-				$Folder			-eq 'NewFolder1\NewFolder3' -and
-				$ShareFolderID	-eq 10249432 -and
+				$ID				-eq '5148901049320353252' -and
+				$Name			-eq 'sitename' -and
+				$Folder			-eq 'NewFolder1\NewFolder2' -and
+				$ShareID		-eq 10249432 -and
 				$URL			-eq 'http://url.com' -and
 				$Credential 	-eq $Account.Credential -and
 				$Notes			-eq 'notecontent3' -and
@@ -835,9 +815,10 @@ InModuleScope Lastpass {
 		Mock Set-Item
 
 		$Note = [PSCustomObject] @{
+			PSTypeName	 = 'Lastpass.SecureNote'
 			ID           = '5148901049320353252'
 			Name         = 'sitename'
-			Content      = 'notecontent3'
+			Notes	     = 'notecontent3'
 			Folder       = 'NewFolder1\NewFolder2'
 			Favorite     = $False
 			LastModified = [DateTime] '4/3/19 4:58:05 AM'
@@ -847,11 +828,43 @@ InModuleScope Lastpass {
 		$Note | Set-Note
 
 		It 'Calls Set-Item with the SecureNote parameter' {
-			Assert-MockCalled Set-Item -ParameterFilter { $SecureNote }
+			Assert-MockCalled Set-Item -ParameterFilter {
+				$ID		-eq '5148901049320353252' -and
+				$Name	-eq 'sitename' -and
+				$Notes	-eq 'notecontent3' -and
+				$Folder	-eq 'NewFolder1\NewFolder2' -and
+				!$PasswordProtect -and
+				!$Favorite
+			}
 		}
 
+		$Note | Add-Member -Type NoteProperty -Name ShareID -Value 10249432
 
+		It 'Includes the ShareID if the SecureNote is shared' {
+			$Note | Set-Note
+			Assert-MockCalled Set-Item -Scope It -ParameterFilter {
+				$ID			-eq '5148901049320353252' -and
+				$Name		-eq 'sitename' -and
+				$ShareID	-eq 10249432 -and
+				$Notes		-eq 'notecontent3' -and
+				$Folder		-eq 'NewFolder1\NewFolder2' -and
+				!$PasswordProtect -and
+				!$Favorite
+			}
+		}
 
+		$Note.Notes = [Ordered] @{
+			Name = 'Note'
+			NoteType = 'Test'
+			IP = '127.0.0.1'
+		}
+
+		It 'Encodes the custom notes' {
+			$Note | Set-Note
+			Assert-MockCalled Set-Item -Scope It -ParameterFilter {
+				$Notes -eq "Name:Note`nNoteType:Test`nIP:127.0.0.1`n"
+			}
+		}
 	}
 
 	Describe New-Password {
@@ -1077,7 +1090,7 @@ InModuleScope Lastpass {
 
 
 		Context 'Shared Account' {
-			$Account | Add-Member -MemberType 'NoteProperty' -Name 'ShareFolderID' -Value 123456
+			$Account | Add-Member -MemberType 'NoteProperty' -Name 'ShareID' -Value 123456
 			$Account.Folder = 'SharedFolder\{0}' -f $Account.Folder
 
 			$Account | Set-Account
@@ -1115,7 +1128,7 @@ InModuleScope Lastpass {
 
 		$Note | Set-Item -SecureNote
 
-		It 'Sets the URL to "http://sn"' {
+		It 'Sets the URL for SecureNotes to "http://sn"' {
 			Assert-MockCalled Invoke-RestMethod -ParameterFilter {
 				$Body.URL -eq '687474703a2f2f736e'
 			}
