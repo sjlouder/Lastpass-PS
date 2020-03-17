@@ -919,7 +919,6 @@ InModuleScope Lastpass {
 	}
 
 	Describe Set-Item {
-		#TODO: Folder property may have share, need to extract it?
 		BeforeAll {
 			$Script:Blob = Get-Content $ScriptRoot/ParsedVault.json | ConvertFrom-Json -AsHashtable
 			$Script:Session = [PSCustomObject] @{
@@ -930,6 +929,7 @@ InModuleScope Lastpass {
 				Username = 'Username'
 				Iterations = '1'
 			}
+			$Script:Blob.SharedFolders | % {$_.Key = [Byte[]][Char[]] $_.Key}
 		}
 
 		$UpdateAPIMockParam = @{
@@ -1090,27 +1090,52 @@ InModuleScope Lastpass {
 
 
 		Context 'Shared Account' {
-			$Account | Add-Member -MemberType 'NoteProperty' -Name 'ShareID' -Value 123456
+			Mock ConvertTo-LPEncryptedString { $Value }
+			Mock Invoke-RestMethod { $Body | Write-Host }
+			$Account | Add-Member -MemberType 'NoteProperty' -Name 'ShareID' -Value $Blob.SharedFolders[0].ID
 			$Account.Folder = 'SharedFolder\{0}' -f $Account.Folder
 
 			$Account | Set-Account
 
-			It 'Throws if the share is readonly' {}
-
 			It 'Includes the sharedfolderid parameter' {
 				Assert-MockCalled Invoke-RestMethod -Scope Context -ParameterFilter {
-					$Body.SharedFolderID -eq 123456
+					$Body.SharedFolderID -eq $Blob.SharedFolders[0].ID
 				}
 			}
 
 			It 'Strips the Shared folder name from the folder property' {
-				Assert-MockCalled Invoke-RestMethod -Scope Context -ParameterFilter {
-					($Body.Grouping | ConvertFrom-LPEncryptedData -Base64) -eq 'NewFolder1\NewFolder2'
+				Assert-MockCalled ConvertTo-LPEncryptedString -Scope Context -ParameterFilter {
+					$Value -eq 'NewFolder1\NewFolder2'
 				}
 			}
 
-			It 'Uses the shared folder key to encrypt the account information' {}
+			It 'Uses the shared folder key to encrypt the account information' {
+				Assert-MockCalled ConvertTo-LPEncryptedString -ParameterFilter {
+					([String] $Key) -eq ([String]$Blob.SharedFolders[0].Key) -and
+					$Value -eq $Account.Name
+				}
+				Assert-MockCalled ConvertTo-LPEncryptedString -ParameterFilter {
+					([String] $Key) -eq ([String]$Blob.SharedFolders[0].Key) -and
+					$Value -eq 'NewFolder1\NewFolder2'
+				}
+				Assert-MockCalled ConvertTo-LPEncryptedString -ParameterFilter {
+					([String] $Key) -eq ([String]$Blob.SharedFolders[0].Key) -and
+					$Value -eq $Account.Notes
+				}
+				Assert-MockCalled ConvertTo-LPEncryptedString -ParameterFilter {
+					([String] $Key) -eq ([String]$Blob.SharedFolders[0].Key) -and
+					$Value -eq $Account.Username
+				}
+				Assert-MockCalled ConvertTo-LPEncryptedString -ParameterFilter {
+					([String] $Key) -eq ([String]$Blob.SharedFolders[0].Key) -and
+					$Value -eq $Account.Password
+				}
+			}
 
+			It 'Throws if the share is readonly' {
+				$Blob.SharedFolders[0].ReadOnly = $True
+				{ $Account | Set-Account } | Should -Throw 'Account sitename is in a read-only shared folder'
+			}
 
 
 		}

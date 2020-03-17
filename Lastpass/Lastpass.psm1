@@ -1297,7 +1297,7 @@ Function Set-Item {
 		If($ShareID){
 			If(($Blob.SharedFolders | Where ID -eq $ShareID).ReadOnly){
 				$Type = If($SecureNote){ 'Note' }Else{ 'Account' }
-				Write-Error ('{0} {1} is in a read-only shared folder' -f ($Type, $Name))
+				Throw ('{0} {1} is in a read-only shared folder' -f ($Type, $Name))
 			}
 			$Body = @{ sharedfolderid = $ShareID }
 			$Folder = $Folder.Substring($Folder.IndexOf('\') + 1)
