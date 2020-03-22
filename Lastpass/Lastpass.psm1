@@ -21,6 +21,7 @@ Param(
 	[ValidateScript({
 		$Schema = @{
 			ExportWriteCmdlets = 'Boolean'
+			Debug = 'Boolean'
 		}
 		$_.GetEnumerator() | ForEach {
 			If($_.Key -notin $Schema.Keys){
@@ -32,7 +33,7 @@ Param(
 		}
 		Return $True
 	})]
-	[HashTable] $ModuleParameters
+	[HashTable] $ModuleParameters = @{}
 )
 
 $Script:Interactive = [Environment]::UserInteractive -and
@@ -44,7 +45,7 @@ $Script:Schema = @{
 		Fields = [Ordered] @{
 			ID = 'String'
 			Name = 'Encrypted'
-			Group = 'Encrypted'
+			Folder = 'Encrypted'
 			URL = 'Hex'
 			Notes = 'Encrypted'
 			Favorite = 'Boolean'
@@ -90,7 +91,7 @@ $Script:Schema = @{
 		Fields = @(
 			'ID'
 			'Name'
-			'Group'
+			'Folder'
 			'NoteType'
 			'Notes'
 			'AttachmentPresent'
@@ -526,7 +527,7 @@ Function Sync-Lastpass {
 						Encrypted {
 							# The name and group are sent encrypted, but are generally needed
 							# for organizing and finding the accounts, so they are decrypted here.
-							If($Field -in 'Name','Group'){
+							If($Field -in 'Name','Folder'){
 								[Char[]] $Item -join '' | ConvertFrom-LPEncryptedData @Param
 							}
 							Else{ ConvertTo-LPEncryptedString @Param -Bytes $Item }
@@ -540,13 +541,13 @@ Function Sync-Lastpass {
 					Write-Debug "End Field $_"
 				}
 
-				If($Account.Group -eq '(none)'){ $Account.Group = $Null }
+				If($Account.Folder -eq '(none)'){ $Account.Folder = $Null }
 
 				If($Blob.SharedFolders[-1]){
-					If($Account.Group){
-						$Account.Group = '{0}\{1}'-f $Blob.SharedFolders[-1].Name, $Account.Group
+					If($Account.Folder){
+						$Account.Folder = '{0}\{1}'-f $Blob.SharedFolders[-1].Name, $Account.Folder
 					}
-					Else{ $Account.Group = $Blob.SharedFolders[-1].Name }
+					Else{ $Account.Folder = $Blob.SharedFolders[-1].Name }
 					$Account.ShareID = $Blob.SharedFolders[-1].ID
 				}
 
@@ -560,14 +561,14 @@ Function Sync-Lastpass {
 					}
 					'http://group' {
 						Write-Debug 'Item is folder'
-						$Account.Name = $Account.Group
+						$Account.Name = $Account.Folder
 						$Account.Keys.Where({$_ -notin $Schema.Folder.Fields}) |
 							ForEach { $Account.Remove($_) }
 						$Account.PSTypeName = 'Lastpass.Folder'
-						$Blob.Folders += [PSCustomObject] $Account
+						$Blob.Folders += $Account
 					}
 					Default {
-						$Blob.Accounts += [PSCustomObject] $Account
+						$Blob.Accounts += $Account
 					}
 				}
 
@@ -1947,7 +1948,7 @@ Function Set-Session {
 }
 
 
-$PublicMethods = @(
+$ExportMethods = @(
 	'Connect-Lastpass'
 	'Sync-Lastpass'
 	'Get-Account'
@@ -1956,10 +1957,17 @@ $PublicMethods = @(
 )
 
 If($ModuleParameters.ExportWriteCmdlets){
-	$PublicMethods += @(
+	$ExportMethods += @(
 		'Set-Account'
 		'Set-Note'
 	)
 }
 
-Export-ModuleMember -Function $PublicMethods
+If($ModuleParameters.Debug){
+	$ExportMethods += @(
+		'Get-Session'
+		'Set-Session'
+	)
+}
+
+Export-ModuleMember -Function $ExportMethods

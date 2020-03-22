@@ -469,22 +469,21 @@ InModuleScope Lastpass {
 			$Blob.Version | Should -Be 107
 		}
 
-		# TODO: Test all properties of all objects for below tests
 		It 'Parses and decrypts the accounts' {
 			$Blob.Accounts.Length | Should -Be 5
 			$Expected.Accounts | ForEach {
 				$Reference = $_
 				$Account = ($Blob.Accounts | Where ID -eq $Reference.ID)
 				$Account | Should -Not -BeNullOrEmpty
-				Compare-Object $Reference.PSObject.Properties $Account.PSObject.Properties -Property Name |
+				Compare-Object $Reference.PSObject.Properties $Account.Keys -Property Name |
 					Should -BeNullOrEmpty
 
-				$Account.PSObject.Properties.Name |
-					Where {$_ -notin 'Username', 'Password', 'Notes', 'Credential'} |
+				$Account.Keys |
+					Where {$_ -notin 'PSTypeName', 'Username', 'Password', 'Notes', 'Credential'} |
 					ForEach {
 						If($Account.$_ -is [DateTime]){
 							$Account.$_.DateTime | Should -Be ($Epoch.AddSeconds([Int]$Reference.$_).DateTime)
-						}Else{ $Account.$_ | Should -Be $Reference.$_ }
+						}Else{ $Account.$_ | Should -Be $Reference.$_ -Because $_}
 					}
 			}
 		}
@@ -524,18 +523,18 @@ InModuleScope Lastpass {
 				# $_ | Out-String | Write-Host
 				$Folder = ($Blob.Folders | Where ID -eq $Reference.ID)
 				$Folder | Should -Not -BeNullOrEmpty
-				Compare-Object $Reference.PSObject.Properties $Folder.PSObject.Properties -Property Name |
+				Compare-Object $Reference.PSObject.Properties $Folder.Keys -Property Name |
 					Should -BeNullOrEmpty
 
-				$Folder.PSObject.Properties.Name | ForEach {
+				$Folder.Keys | Where { $_ -notin 'PSTypeName' } | ForEach {
 					# Write-Host $_
 					# Write-Host $Folder.$_
 					If($_ -eq 'Name'){
-						$Folder.$_ | Should -Be $Reference.Group
+						$Folder.$_ | Should -Be $Reference.Folder
 					}
 					ElseIf($Folder.$_ -is [DateTime]){
 						$Folder.$_.DateTime | Should -Be ($Epoch.AddSeconds([Int]$Reference.$_).DateTime)
-					}Else{ $Folder.$_ | Should -Be $Reference.$_ }
+					}Else{ $Folder.$_ | Should -Be $Reference.$_ -Because $_ }
 				}
 			}
 		}
@@ -628,7 +627,7 @@ InModuleScope Lastpass {
 		}
 
 		It 'Decrypts the folder' {
-			$Result.Group | Should -Be $Expected.Group
+			$Result.Folder | Should -Be $Expected.Folder
 		}
 
 		It 'Decrypts the username' {
