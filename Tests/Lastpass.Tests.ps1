@@ -626,12 +626,12 @@ InModuleScope Lastpass {
 			$Result | Should -BeOfType "PSCustomObject('Lastpass.Account')"
 		}
 
-		It 'Decrypts the folder' {
-			$Result.Folder | Should -Be $Expected.Folder
-		}
-
 		It 'Decrypts the username' {
 			$Result.Username | Should -Be $Expected.Username
+		}
+
+		It 'Decrypts the password' {
+			$Result.Password | Should -Be $Expected.Password
 		}
 
 		It 'Decrypts the note content' {
@@ -659,6 +659,8 @@ InModuleScope Lastpass {
 		It 'Creates a PSCredential property' {
 			$Result.Credential | Should -Not -BeNullOrEmpty
 			$Result.Credential | Should -BeOfType PSCredential
+			$Result.Credential.Username | Should -Be $Expected.Username
+			$Result.Credential.GetNetworkCredential().Password | Should -Be $Expected.Password
 		}
 
 	}

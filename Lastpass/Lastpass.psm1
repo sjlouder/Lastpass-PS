@@ -206,10 +206,12 @@ Function Connect-Lastpass {
 
 	.EXAMPLE
 	Connect-Lastpass -Credential (Get-Credential)
+
 	Logs in to Lastpass, prompting for the username and password
 
 	.EXAMPLE
 	Connect-Lastpass -Credential $Credential -OneTimePassword 158320
+
 	Logs in to Lastpass, with the credentials saved in the $Credential
 	variable. Includes the one time password.
 	#>
@@ -454,6 +456,7 @@ Function Sync-Lastpass {
 
 	.EXAMPLE
 	Sync-LastpassBlob
+
 	Downloads the Lastpass accounts from the server
 
 	#>
@@ -639,10 +642,12 @@ Function Get-Account {
 
 	.EXAMPLE
 	Get-Account
+
 	Returns a list of all account IDs and names
 
 	.EXAMPLE
 	Get-Account -Name 'Email'
+
 	Returns all accounts named 'Email'
 	#>
 
@@ -736,11 +741,13 @@ Function Set-Account {
 
 	.EXAMPLE
 	Set-Account -ID 10248 -Name 'NewName'
+
 	Sets the account with ID 10248 to have the name 'NewName'.
 	Note that any username, password, notes, or other properties of the account will be overwritten.
 
 	.EXAMPLE
 	Get-Account 'Email' | Set-Account -PasswordProtect
+
 	Gets the account named 'Email', and passes it to Set-Account to update the account to require
 	a password to access. Passing in an account object will include all of the existing properties,
 	so Set-Account will effectively perform an update, only overwriting the parameters explicitly
@@ -816,11 +823,13 @@ Function Get-Note {
 
 	.EXAMPLE
 	Get-Note
+
 	Returns a list of all notes in the Lastpass account.
 	The returned objects do not have decrypted content.
 
 	.EXAMPLE
 	Get-Note 'Bank PIN'
+
 	Returns all notes called 'Bank PIN', prompting for the password if the note is password protected.
 	#>
 
@@ -908,11 +917,13 @@ Function Set-Note {
 
 	.EXAMPLE
 	Set-Note -ID 10248 -Name 'NewName'
+
 	Sets the note with ID 10248 to have the name 'NewName'.
 	Note that any note content, folder, or other properties of the note will be overwritten.
 
 	.EXAMPLE
 	Get-Note 'SecretCrush' | Set-Note -PasswordProtect
+
 	Gets the note named 'SecretCrush', and passes it to Set-Note to update the note to require
 	a password to access. Passing in a note object will include all of the existing properties,
 	so Set-Note will effectively perform an update, only overwriting the parameters explicitly
@@ -995,19 +1006,23 @@ Function New-Password {
 
 	.EXAMPLE
 	New-Password
+
 	Generates a new random password
 
 	.EXAMPLE
 	New-Password -AsPlainString
+
 	Generates a new random password output as a plaintext string
 	By default, New-Password outputs a SecureString object
 
 	.EXAMPLE
 	New-Password -Length 25
+
 	Generates a random 25 character password
 
 	.EXAMPLE
 	New-Password -InvalidCharacters "a-c\[\]\\\-"
+
 	Generates a new random password without the characters a, b, c, [, ], \, or -
 	This example shows the regex set notation, and the characters that need to be escaped with a
 	preceding '\'
@@ -1178,11 +1193,13 @@ Function Set-Item {
 
 	.EXAMPLE
 	Set-Item -ID 10248 -Name 'NewName'
+
 	Sets the account with ID 10248 to have the name 'NewName'.
 	Note that any username, password, notes, or other properties of the account will be overwritten.
 
 	.EXAMPLE
 	Get-Account 'Email' | Set-Item -PasswordProtect
+
 	Gets the account named 'Email', and passes it to Set-Item to update the account to require
 	a password to access. Passing in an account object will include all of the existing properties,
 	so Set-Item will effectively perform an update, only overwriting the parameters explicitly
@@ -1373,6 +1390,7 @@ Function New-Key {
 
 	.EXAMPLE
 	New-Key -Credential $Credential -Iterations $Iterations
+
 	Creates a new Lastpass decryption key using the username and password in the $Credential
 	variable, and the number of iterations in the $Iterations variable
 	#>
@@ -1429,6 +1447,7 @@ Function New-LoginHash {
 
 	.EXAMPLE
 	New-LoginHash -Key $Key -Credential $Credential -Iterations $Iterations
+
 	Generates a new hash value used for logging in to Lastpass using the key in the $Key variable,
 	the username and password in the $Credential variable, and the number of iterations in the
 	$Iterations variable
@@ -1488,10 +1507,12 @@ Function Read-Item {
 
 	.EXAMPLE
 	Read-Item $Blob
+
 	Reads an item from Lastpass Blob $Blob, starting from index 0
 
 	.EXAMPLE
 	Read-Item $Blob $Index
+
 	Reads an item from Lastpass Blob $Blob, starting from index $Index
 
 	#>
@@ -1541,10 +1562,12 @@ Function Read-ASN1Item {
 
 	.EXAMPLE
 	Read-ASN1 -Blob $Blob
+
 	Reads the ASN1 encoded item from the $Blob byte array, starting at index 0
 
 	.EXAMPLE
 	Read-ASN1 -Blob $Blob -Index $Index -StripLeadingZeros
+
 	Reads the ASN1 encoded item from the $Blob byte array, starting at index $Index.
 	The leading zeros in the result will be stripped.
 	#>
@@ -1614,15 +1637,18 @@ Function ConvertFrom-LPEncryptedData {
 
 	.EXAMPLE
 	ConvertFrom-LPEncryptedData -Value '!lks;jf90s|fsafj9#IOj893fj'
+
 	Decrypts the Lastpass encrypted input string
 
 	.EXAMPLE
 	$EncryptedAccounts.Name | ConvertFrom-LPEncryptedData
+
 	Decrypts the names of the accounts in the $EncryptedAccounts variable
 
 	.EXAMPLE
 	$Key = [Convert]::FromBase64String('Bg0kRH2p+IC4mjRHlNm/IyNnfudsEXaaPLgHDeU0NTs=')
 	'IVdYT0McSfObWOy68igNDsDDSoATbUwNSt/TFEMnu5hV' | ConvertFrom-LPEncryptedData -Key $Key -Base64
+
 	Decrypts the Base64 encoded encrypted string using the specified key
 	#>
 	[CmdletBinding(DefaultParameterSetName='String')]
@@ -1740,14 +1766,17 @@ Function ConvertTo-LPEncryptedString {
 
 	.EXAMPLE
 	ConvertTo-LPEncryptedString -Value 'SecretText'
+
 	Encrypts the input string 'SecretText
 
 	.EXAMPLE
 	$DecryptedAccounts.Username | ConvertTo-LPEncryptedString
+
 	Encrypts the names of the accounts in the $DecryptedAccounts variable
 
 	.EXAMPLE
 	ConvertTo-LPEncryptedString -Bytes $Bytes
+
 	Converts the byte array $Bytes into a SecureString object, suitable for in memory storage
 	#>
 
@@ -1823,10 +1852,12 @@ Function ConvertFrom-Hex {
 
 	.EXAMPLE
 	ConvertFrom-Hex '56616C7565'
+
 	Decodes the hex string to 86,97,108,117,101 ('Value')
 
 	.EXAMPLE
 	'506970656C696E6556616C7565' | ConvertFrom-Hex
+
 	Decodes the hex string to 80,105,112,101,108,105,110,101,86,97,108,117,101 ('PipelineValue')
 	#>
 
@@ -1864,6 +1895,7 @@ Function Confirm-Password {
 
 	.EXAMPLE
 	Confirm-Password
+
 	Checks whether the master password has been verified within the timeout setting,
 	and if not, prompts the user to re-enter their password and verifies it is correct.
 	#>
@@ -1900,6 +1932,7 @@ Function Get-Session {
 
 	.EXAMPLE
 	Get-Session
+
 	Gets the Lastpass session object
 
 	#>
@@ -1925,10 +1958,12 @@ Function Set-Session {
 
 	.EXAMPLE
 	Set-Session $S
+
 	Sets the Lastpass session
 
 	.EXAMPLE
 	$S | Set-Session
+
 	Sets the Lastpass session
 	#>
 
