@@ -58,7 +58,8 @@ Experimental/in development:
 * Update accounts and notes
 	* **WARNING**: Not fully tested. **Create backup copies of your data before using this project to make any modifications.**
 	* **WARNING**: Shared items not currently supported
-	* **WARNING**: Custom Notes not supported
+	* **WARNING**: Custom Notes not fully tested
+	* **WARNING**: form fields (and likely attachments) are not currently supported and will be **lost**!
 	* **NOTE**: These functions (Set-Account and Set-Note) are not exposed by default while they are in
 	development. In order to enable these functions, pass in a hashtable to the module with a key
 	named "ExportWriteCmdlets" and the value set to $True, eg:

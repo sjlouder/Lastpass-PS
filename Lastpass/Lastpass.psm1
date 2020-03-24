@@ -754,7 +754,7 @@ Function Set-Account {
 	passed in.
 	#>
 
-	[CmdletBinding()]
+	[CmdletBinding(SupportsShouldProcess, ConfirmImpact = 'High')]
 	Param(
 		[Parameter(Mandatory, ValueFromPipeline)]
 		[PSTypeName('Lastpass.Account')] $Account,
@@ -930,7 +930,7 @@ Function Set-Note {
 	passed in.
 	#>
 
-	[CmdletBinding()]
+	[CmdletBinding(SupportsShouldProcess, ConfirmImpact = 'High')]
 	Param(
 		[Parameter(Mandatory, ValueFromPipeline)]
 		[PSTypeName('Lastpass.SecureNote')] $Note,
@@ -1206,7 +1206,11 @@ Function Set-Item {
 	passed in.
 	#>
 
-	[CmdletBinding(DefaultParameterSetName='Account')]
+	[CmdletBinding(
+		SupportsShouldProcess,
+		ConfirmImpact = 'High',
+		DefaultParameterSetName = 'Account'
+	)]
 	Param(
 		[Parameter(
 			Mandatory,
@@ -1353,21 +1357,35 @@ Function Set-Item {
 		}
 
 		"Request Parameters:`n{0}" -f ($Body | Out-String) | Write-Debug
-		$Response = Invoke-RestMethod @Param -Body ($BodyBase + $Body)
-		$Response.OuterXML | Out-String | Write-Debug
+		$VerboseDescription = '{0} "{1}"' -f '{0}', $Name
+		If($SecureNote){
+			$VerboseDescription = $VerboseDescription -f 'secure note'
+		}
+		Else{
+			$VerboseDescription = $VerboseDescription -f 'account'
+		}
+		$Query = "WARNING: update support is currently experimental`n" +
+			"DATA LOSS MAY OCCUR (especially if item has form fields or attachments)`n" +
+			"Update $VerboseDescription" -f $Name
+		$VerboseDescription = "Updating $VerboseDescription"
+		If($PSCmdlet.ShouldProcess($VerboseDescription,$Query,'Continue?')){
+			Write-Verbose $VerboseDescription
+			$Response = Invoke-RestMethod @Param -Body ($BodyBase + $Body)
 
-		Switch($Response.XMLResponse.Result.Msg){
-			'AccountCreated' {
+			$Response.OuterXML | Out-String | Write-Debug
+			Switch($Response.XMLResponse.Result.Msg){
+				'AccountCreated' {
 
-			}
-			'AccountUpdated' {
+				}
+				'AccountUpdated' {
 
-			}
-			Default {
-				Throw ("Failed to update {0}.`n{1}" -f @(
-					$Name
-					$Response.OuterXML)
-				)
+				}
+				Default {
+					Throw ("Failed to update {0}.`n{1}" -f @(
+						$Name
+						$Response.OuterXML)
+					)
+				}
 			}
 		}
 	}
@@ -1992,6 +2010,9 @@ $ExportMethods = @(
 )
 
 If($ModuleParameters.ExportWriteCmdlets){
+	"Modification cmdlets are currently experimental " +
+	"and should not be used for production workloads.`n" +
+	"DATA LOSS MAY OCCUR!" | Write-Warning
 	$ExportMethods += @(
 		'Set-Account'
 		'Set-Note'

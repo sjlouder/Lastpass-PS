@@ -931,6 +931,8 @@ InModuleScope Lastpass {
 				Iterations = '1'
 			}
 			$Script:Blob.SharedFolders | % {$_.Key = [Byte[]][Char[]] $_.Key}
+			$Confirm = $ConfirmPreference
+			$ConfirmPreference = 'None'
 		}
 
 		$UpdateAPIMockParam = @{
@@ -1160,6 +1162,7 @@ InModuleScope Lastpass {
 			}
 		}
 
+		AfterAll { $ConfirmPreference = $Confirm }
 	}
 
 	Describe ConvertFrom-LPEncryptedData {
@@ -1376,7 +1379,7 @@ Describe 'Documentation Tests' -Tag Documentation {
 			}
 			If($_.Parameters){
 				It 'Has a description for each parameter' {
-					$_.Parameters.Parameter | ForEach {
+				$_.Parameters.Parameter | Where { $_.Name -notin 'WhatIf', 'Confirm' } | ForEach {
 						If(!$_.Description){
 							Throw "Parameter $($_.Name) does not have a description"
 						}
