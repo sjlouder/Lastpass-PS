@@ -21,6 +21,7 @@ Param(
 	[ValidateScript({
 		$Schema = @{
 			ExportWriteCmdlets = 'Boolean'
+			Debug = 'Boolean'
 		}
 		$_.GetEnumerator() | ForEach {
 			If($_.Key -notin $Schema.Keys){
@@ -32,7 +33,7 @@ Param(
 		}
 		Return $True
 	})]
-	[HashTable] $ModuleParameters
+	[HashTable] $ModuleParameters = @{}
 )
 
 $Script:Interactive = [Environment]::UserInteractive -and
@@ -44,7 +45,7 @@ $Script:Schema = @{
 		Fields = [Ordered] @{
 			ID = 'String'
 			Name = 'Encrypted'
-			Group = 'Encrypted'
+			Folder = 'Encrypted'
 			URL = 'Hex'
 			Notes = 'Encrypted'
 			Favorite = 'Boolean'
@@ -90,7 +91,7 @@ $Script:Schema = @{
 		Fields = @(
 			'ID'
 			'Name'
-			'Group'
+			'Folder'
 			'NoteType'
 			'Notes'
 			'AttachmentPresent'
@@ -104,7 +105,7 @@ $Script:Schema = @{
 			'LastAccessed'
 			'LastModifiedGMT'
 			'LastPasswordChange'
-			'ShareFolderID'
+			'ShareID'
 		)
 		DefaultFields = @(
 			'Name'
@@ -141,7 +142,7 @@ $Script:Schema = @{
 			'LastAccessed'
 			'LastModifiedGMT'
 			'LastPasswordChange'
-			'ShareFolderID'
+			'ShareID'
 		)
 		DefaultFields = @(
 			'Name'
@@ -205,10 +206,12 @@ Function Connect-Lastpass {
 
 	.EXAMPLE
 	Connect-Lastpass -Credential (Get-Credential)
+
 	Logs in to Lastpass, prompting for the username and password
 
 	.EXAMPLE
 	Connect-Lastpass -Credential $Credential -OneTimePassword 158320
+
 	Logs in to Lastpass, with the credentials saved in the $Credential
 	variable. Includes the one time password.
 	#>
@@ -453,6 +456,7 @@ Function Sync-Lastpass {
 
 	.EXAMPLE
 	Sync-LastpassBlob
+
 	Downloads the Lastpass accounts from the server
 
 	#>
@@ -526,7 +530,7 @@ Function Sync-Lastpass {
 						Encrypted {
 							# The name and group are sent encrypted, but are generally needed
 							# for organizing and finding the accounts, so they are decrypted here.
-							If($Field -in 'Name','Group'){
+							If($Field -in 'Name','Folder'){
 								[Char[]] $Item -join '' | ConvertFrom-LPEncryptedData @Param
 							}
 							Else{ ConvertTo-LPEncryptedString @Param -Bytes $Item }
@@ -540,14 +544,14 @@ Function Sync-Lastpass {
 					Write-Debug "End Field $_"
 				}
 
-				If($Account.Group -eq '(none)'){ $Account.Group = $Null }
+				If($Account.Folder -eq '(none)'){ $Account.Folder = $Null }
 
 				If($Blob.SharedFolders[-1]){
-					If($Account.Group){
-						$Account.Group = '{0}\{1}'-f $Blob.SharedFolders[-1].Name, $Account.Group
+					If($Account.Folder){
+						$Account.Folder = '{0}\{1}'-f $Blob.SharedFolders[-1].Name, $Account.Folder
 					}
-					Else{ $Account.Group = $Blob.SharedFolders[-1].Name }
-					$Account.ShareFolderID = $Blob.SharedFolders[-1].ID
+					Else{ $Account.Folder = $Blob.SharedFolders[-1].Name }
+					$Account.ShareID = $Blob.SharedFolders[-1].ID
 				}
 
 				Switch($Account.URL){
@@ -560,14 +564,14 @@ Function Sync-Lastpass {
 					}
 					'http://group' {
 						Write-Debug 'Item is folder'
-						$Account.Name = $Account.Group
+						$Account.Name = $Account.Folder
 						$Account.Keys.Where({$_ -notin $Schema.Folder.Fields}) |
 							ForEach { $Account.Remove($_) }
 						$Account.PSTypeName = 'Lastpass.Folder'
-						$Blob.Folders += [PSCustomObject] $Account
+						$Blob.Folders += $Account
 					}
 					Default {
-						$Blob.Accounts += [PSCustomObject] $Account
+						$Blob.Accounts += $Account
 					}
 				}
 
@@ -638,10 +642,12 @@ Function Get-Account {
 
 	.EXAMPLE
 	Get-Account
+
 	Returns a list of all account IDs and names
 
 	.EXAMPLE
 	Get-Account -Name 'Email'
+
 	Returns all accounts named 'Email'
 	#>
 
@@ -661,9 +667,9 @@ Function Get-Account {
 
 				$Account = @{}
 				$Param = @{}
-				If($Account.ShareFolderID){
+				If($_.ShareID){
 					$Param.Key = $Blob.SharedFolders |
-						Where ID -eq $Account.ShareFolderID |
+						Where ID -eq $_.ShareID |
 						ForEach Key
 				}
 
@@ -705,23 +711,17 @@ Function Set-Account {
 	Does a full overwrite (ie. any parameters not included will be
 	deleted if they existed as part of the account previously)
 
-	.PARAMETER ID
-	The ID of the account
+	.PARAMETER Account
+	The Lastpass account to update
 
 	.PARAMETER Name
 	The name of the account
 
-	.PARAMETER Folder
-	The directory path that contains the account
-
 	.PARAMETER URL
 	The URL of the account
 
-	.PARAMETER Username
-	The username of the account
-
-	.PARAMETER Password
-	The password of the account
+	.PARAMETER Credential
+	The account credentials
 
 	.PARAMETER Notes
 	The notes tied to the account
@@ -741,42 +741,32 @@ Function Set-Account {
 
 	.EXAMPLE
 	Set-Account -ID 10248 -Name 'NewName'
+
 	Sets the account with ID 10248 to have the name 'NewName'.
 	Note that any username, password, notes, or other properties of the account will be overwritten.
 
 	.EXAMPLE
 	Get-Account 'Email' | Set-Account -PasswordProtect
+
 	Gets the account named 'Email', and passes it to Set-Account to update the account to require
 	a password to access. Passing in an account object will include all of the existing properties,
 	so Set-Account will effectively perform an update, only overwriting the parameters explicitly
 	passed in.
 	#>
 
-	[CmdletBinding()]
+	[CmdletBinding(SupportsShouldProcess, ConfirmImpact = 'High')]
 	Param(
-		[Parameter(
-			Mandatory,
-			ValueFromPipelineByPropertyName
-		)]
-		[String] $ID,
-
-		[Parameter(
-			Mandatory,
-			ValueFromPipelineByPropertyName
-		)]
-		[String] $Name,
+		[Parameter(Mandatory, ValueFromPipeline)]
+		[PSTypeName('Lastpass.Account')] $Account,
 
 		[Parameter(ValueFromPipelineByPropertyName)]
-		[String] $Folder,
+		[String] $Name,
 
 		[Parameter(ValueFromPipelineByPropertyName)]
 		[String] $URL,
 
 		[Parameter(ValueFromPipelineByPropertyName)]
-		[String] $Username,
-
-		[Parameter(ValueFromPipelineByPropertyName)]
-		[String] $Password,
+		[PSCredential] $Credential,
 
 		[Parameter(ValueFromPipelineByPropertyName)]
 		[String] $Notes,
@@ -794,9 +784,28 @@ Function Set-Account {
 		[Switch] $DisableAutofill
 	)
 
-	Set-Item @PSBoundParameters
+	"Set-Account called with parameters:`n{0}" -f ($PSBoundParameters | Out-String) | Write-Debug
+
+	$Param = @{
+		ID				= $Account.ID
+		Name			= $Name
+		Folder			= $Account.Folder
+		URL				= $URL
+		Credential		= $Credential
+		Notes			= $Notes
+		PasswordProtect	= $PasswordProtect
+		Favorite		= $Favorite
+		AutoLogin		= $AutoLogin
+		DisableAutofill	= $DisableAutofill
+	}
+	If($Account.ShareID){ $Param.ShareID = $Account.ShareID }
+
+
+	"Calling Set-Item with parameters:`n{0}" -f ($Param | Out-String) | Write-Debug
+	Set-Item @Param
 
 }
+
 
 
 Function Get-Note {
@@ -814,11 +823,13 @@ Function Get-Note {
 
 	.EXAMPLE
 	Get-Note
+
 	Returns a list of all notes in the Lastpass account.
 	The returned objects do not have decrypted content.
 
 	.EXAMPLE
 	Get-Note 'Bank PIN'
+
 	Returns all notes called 'Bank PIN', prompting for the password if the note is password protected.
 	#>
 
@@ -838,9 +849,9 @@ Function Get-Note {
 
 				$Note = @{}
 				$Param = @{}
-				If($_.ShareFolderID){
+				If($_.ShareID){
 					$Param.Key = $Blob.SharedFolders |
-						Where ID -eq $_.ShareFolderID |
+						Where ID -eq $_.ShareID |
 						ForEach Key
 				}
 
@@ -861,13 +872,15 @@ Function Get-Note {
 					)
 				){
 					'Custom Note: {0}' -f $Matches[1] | Write-Debug
+					$Notes = [Ordered] @{}
 					$Note.Notes -split "`n" | ForEach {
-						If(($Split = $_.IndexOf(':')) -ne -1){
+						If(($Split = $_.IndexOf(':')) -ge 1){
 							$Key = $_.Substring(0,$Split)
-							$Note[$Key] = $_.Substring(($Split+1))
+							$Notes[$Key] = $_.Substring(($Split+1))
 						}
-						Else{ $Note[$Key] += "`n$_" }
+						Else{ $Notes[$Key] += "`n$_" }
 					}
+					$Note.Notes = $Notes
 				}
 				$Note.LastAccessed = [DateTime]::Now
 				[PSCustomObject] $Note | Write-Output
@@ -875,7 +888,6 @@ Function Get-Note {
 		}
 	}
 }
-
 
 
 Function Set-Note {
@@ -888,16 +900,13 @@ Function Set-Note {
 	Does a full overwrite (ie. any parameters not included will be
 	deleted if they existed as part of the note previously)
 
-	.PARAMETER ID
-	The ID of the note
+	.PARAMETER Note
+	The Lastpass secure note to update
 
 	.PARAMETER Name
 	The name of the note
 
-	.PARAMETER Folder
-	The directory path that contains the note
-
-	.PARAMETER Content
+	.PARAMETER Notes
 	The content of the note
 
 	.PARAMETER PasswordProtect
@@ -908,24 +917,23 @@ Function Set-Note {
 
 	.EXAMPLE
 	Set-Note -ID 10248 -Name 'NewName'
+
 	Sets the note with ID 10248 to have the name 'NewName'.
 	Note that any note content, folder, or other properties of the note will be overwritten.
 
 	.EXAMPLE
 	Get-Note 'SecretCrush' | Set-Note -PasswordProtect
+
 	Gets the note named 'SecretCrush', and passes it to Set-Note to update the note to require
 	a password to access. Passing in a note object will include all of the existing properties,
 	so Set-Note will effectively perform an update, only overwriting the parameters explicitly
 	passed in.
 	#>
 
-	[CmdletBinding()]
+	[CmdletBinding(SupportsShouldProcess, ConfirmImpact = 'High')]
 	Param(
-		[Parameter(
-			Mandatory,
-			ValueFromPipelineByPropertyName
-		)]
-		[String] $ID,
+		[Parameter(Mandatory, ValueFromPipeline)]
+		[PSTypeName('Lastpass.SecureNote')] $Note,
 
 		[Parameter(
 			Mandatory,
@@ -934,10 +942,7 @@ Function Set-Note {
 		[String] $Name,
 
 		[Parameter(ValueFromPipelineByPropertyName)]
-		[String] $Folder,
-
-		[Parameter(ValueFromPipelineByPropertyName)]
-		[String] $Content,
+		[Object] $Notes,
 
 		[Parameter(ValueFromPipelineByPropertyName)]
 		[Switch] $PasswordProtect,
@@ -946,7 +951,24 @@ Function Set-Note {
 		[Switch] $Favorite
 	)
 
-	Set-Item -SecureNote @PSBoundParameters
+	$Param = @{
+		ID				= $Note.ID
+		Name			= $Name
+		Folder			= $Note.Folder
+		Notes			= $Notes
+		PasswordProtect	= $PasswordProtect
+		Favorite		= $Favorite
+	}
+
+	If($Note.ShareID){ $Param.ShareID = $Note.ShareID }
+
+	If($Notes -is [Collections.Specialized.OrderedDictionary]){
+		$Param.Notes = ''
+		$Notes.GetEnumerator() | ForEach {
+			$Param.Notes += "{0}:{1}`n" -f $_.Key, $_.Value
+		}
+	}
+	Set-Item @Param
 
 }
 
@@ -984,19 +1006,23 @@ Function New-Password {
 
 	.EXAMPLE
 	New-Password
+
 	Generates a new random password
 
 	.EXAMPLE
 	New-Password -AsPlainString
+
 	Generates a new random password output as a plaintext string
 	By default, New-Password outputs a SecureString object
 
 	.EXAMPLE
 	New-Password -Length 25
+
 	Generates a random 25 character password
 
 	.EXAMPLE
 	New-Password -InvalidCharacters "a-c\[\]\\\-"
+
 	Generates a new random password without the characters a, b, c, [, ], \, or -
 	This example shows the regex set notation, and the characters that need to be escaped with a
 	preceding '\'
@@ -1167,18 +1193,24 @@ Function Set-Item {
 
 	.EXAMPLE
 	Set-Item -ID 10248 -Name 'NewName'
+
 	Sets the account with ID 10248 to have the name 'NewName'.
 	Note that any username, password, notes, or other properties of the account will be overwritten.
 
 	.EXAMPLE
 	Get-Account 'Email' | Set-Item -PasswordProtect
+
 	Gets the account named 'Email', and passes it to Set-Item to update the account to require
 	a password to access. Passing in an account object will include all of the existing properties,
 	so Set-Item will effectively perform an update, only overwriting the parameters explicitly
 	passed in.
 	#>
 
-	[CmdletBinding(DefaultParameterSetName='Account')]
+	[CmdletBinding(
+		SupportsShouldProcess,
+		ConfirmImpact = 'High',
+		DefaultParameterSetName = 'Account'
+	)]
 	Param(
 		[Parameter(
 			Mandatory,
@@ -1201,6 +1233,9 @@ Function Set-Item {
 		[Parameter(ValueFromPipelineByPropertyName)]
 		[String] $Folder,
 
+		[Parameter(ValueFromPipelineByPropertyName)]
+		[String] $ShareID,
+
 		[Parameter(
 			ParameterSetName='Account',
 			ValueFromPipelineByPropertyName
@@ -1211,13 +1246,7 @@ Function Set-Item {
 			ParameterSetName='Account',
 			ValueFromPipelineByPropertyName
 		)]
-		[String] $Username,
-
-		[Parameter(
-			ParameterSetName='Account',
-			ValueFromPipelineByPropertyName
-		)]
-		[String] $Password,
+		[PSCredential] $Credential,
 
 		[Parameter(ValueFromPipelineByPropertyName)]
 		[Alias('Content','Extra')]
@@ -1259,13 +1288,51 @@ Function Set-Item {
 	}
 
 	PROCESS {
+
+		# If shared
+		# 	If share is Readonly, Throw
+		#	append share id
+		#	strip shared folder name from Folder/grouping property
+		# Get account
+		# Check if editable (IsShared and Share.ReadOnly)
+		# Update modified property(ies)
+		# 	generate new encrypted value (with new IV)
+		# 	set unencrypted value
+		# update_account
+		# 	show_website.php
+		# 		extjs = 1
+		# 		token = $Token
+		# 		method = 'cli'
+		# 		name = $Account.Name (encrypted)
+		# 		grouping = $Account.Folder.Name (encrypted)
+		# 		pwprotect = 'on'/'off'
+		# 		aid = $Account.ID
+		# 		url = $Account.URL (hex)
+		# 		username = $Account.Username (encrypted)
+		# 		password = $Account.Password (encrypted)
+		# 		extra = $Account.Notes (encrypted)
+		# 		If $Account.SharedFolderID
+		# 			sharedfolderid = $Account > Share.ID
+		# save blob
+
+
+		If($ShareID){
+			If(($Blob.SharedFolders | Where ID -eq $ShareID).ReadOnly){
+				$Type = If($SecureNote){ 'Note' }Else{ 'Account' }
+				Throw ('{0} {1} is in a read-only shared folder' -f ($Type, $Name))
+			}
+			$Body = @{ sharedfolderid = $ShareID }
+			$Folder = $Folder.Substring($Folder.IndexOf('\') + 1)
+			$Key = $Blob.SharedFolders | Where ID -eq $ShareID | Select -Expand Key
+		}
+
 		If($SecureNote){ $URL = 'http://sn' }
-		$Body = @{
+		$Body += @{
 			aid		 = $ID
-			name	 = $Name | ConvertTo-LPEncryptedString
-			grouping = $Folder | ConvertTo-LPEncryptedString
+			name	 = $Name | ConvertTo-LPEncryptedString -Key $Key
+			grouping = $Folder | ConvertTo-LPEncryptedString -Key $Key
 			url		 = ([Byte[]][Char[]] $URL | ForEach { "{0:x2}" -f $_ }) -join ''
-			extra	 = $Notes | ConvertTo-LPEncryptedString
+			extra	 = $Notes | ConvertTo-LPEncryptedString -Key $Key
 			<#
 			folder = 'user'		#, 'none', or name of default folder
 			#localupdate = 1	# ?
@@ -1278,33 +1345,47 @@ Function Set-Item {
 			#data = ""			# Used for app fields?
 			#>
 		}
+		If($PasswordProtect){ $Body.pwprotect = 'on' }
+		If($Favorite){ $Body.fav = 'on' }
 
 		If(!$SecureNote){
-			$Body.username = $Username | ConvertTo-LPEncryptedString
-			$Body.password = $Password | ConvertTo-LPEncryptedString
+			$Body.username = $Credential.Username | ConvertTo-LPEncryptedString -Key $Key
+			$Body.password = $Credential.GetNetworkCredential().Password |
+				ConvertTo-LPEncryptedString -Key $Key
 			If($AutoLogin){ $Body.autologin = 'on' }
 			If($DisableAutofill){ $Body.never_autofill = 'on' }
 		}
 
-		If($PasswordProtect){ $Body.pwprotect = 'on' }
-		If($Favorite){ $Body.fav = 'on' }
 		"Request Parameters:`n{0}" -f ($Body | Out-String) | Write-Debug
-		$Response = Invoke-RestMethod @Param -Body ($BodyBase + $Body)
-		$Response.OuterXML | Out-String | Write-Debug
+		$VerboseDescription = '{0} "{1}"' -f '{0}', $Name
+		If($SecureNote){
+			$VerboseDescription = $VerboseDescription -f 'secure note'
+		}
+		Else{
+			$VerboseDescription = $VerboseDescription -f 'account'
+		}
+		$Query = "WARNING: update support is currently experimental`n" +
+			"DATA LOSS MAY OCCUR (especially if item has form fields or attachments)`n" +
+			"Update $VerboseDescription" -f $Name
+		$VerboseDescription = "Updating $VerboseDescription"
+		If($PSCmdlet.ShouldProcess($VerboseDescription,$Query,'Continue?')){
+			Write-Verbose $VerboseDescription
+			$Response = Invoke-RestMethod @Param -Body ($BodyBase + $Body)
 
-		Switch($Response.XMLResponse.Result.Msg){
-			'AccountCreated' {
+			$Response.OuterXML | Out-String | Write-Debug
+			Switch($Response.XMLResponse.Result.Msg){
+				'AccountCreated' {
 
-			}
-			'AccountUpdated' {
+				}
+				'AccountUpdated' {
 
-				Break
-			}
-			Default {
-				Throw ("Failed to update {0}.`n{1}" -f @(
-					$Name
-					$Response.OuterXML)
-				)
+				}
+				Default {
+					Throw ("Failed to update {0}.`n{1}" -f @(
+						$Name
+						$Response.OuterXML)
+					)
+				}
 			}
 		}
 	}
@@ -1327,6 +1408,7 @@ Function New-Key {
 
 	.EXAMPLE
 	New-Key -Credential $Credential -Iterations $Iterations
+
 	Creates a new Lastpass decryption key using the username and password in the $Credential
 	variable, and the number of iterations in the $Iterations variable
 	#>
@@ -1383,6 +1465,7 @@ Function New-LoginHash {
 
 	.EXAMPLE
 	New-LoginHash -Key $Key -Credential $Credential -Iterations $Iterations
+
 	Generates a new hash value used for logging in to Lastpass using the key in the $Key variable,
 	the username and password in the $Credential variable, and the number of iterations in the
 	$Iterations variable
@@ -1442,10 +1525,12 @@ Function Read-Item {
 
 	.EXAMPLE
 	Read-Item $Blob
+
 	Reads an item from Lastpass Blob $Blob, starting from index 0
 
 	.EXAMPLE
 	Read-Item $Blob $Index
+
 	Reads an item from Lastpass Blob $Blob, starting from index $Index
 
 	#>
@@ -1495,10 +1580,12 @@ Function Read-ASN1Item {
 
 	.EXAMPLE
 	Read-ASN1 -Blob $Blob
+
 	Reads the ASN1 encoded item from the $Blob byte array, starting at index 0
 
 	.EXAMPLE
 	Read-ASN1 -Blob $Blob -Index $Index -StripLeadingZeros
+
 	Reads the ASN1 encoded item from the $Blob byte array, starting at index $Index.
 	The leading zeros in the result will be stripped.
 	#>
@@ -1568,15 +1655,18 @@ Function ConvertFrom-LPEncryptedData {
 
 	.EXAMPLE
 	ConvertFrom-LPEncryptedData -Value '!lks;jf90s|fsafj9#IOj893fj'
+
 	Decrypts the Lastpass encrypted input string
 
 	.EXAMPLE
 	$EncryptedAccounts.Name | ConvertFrom-LPEncryptedData
+
 	Decrypts the names of the accounts in the $EncryptedAccounts variable
 
 	.EXAMPLE
 	$Key = [Convert]::FromBase64String('Bg0kRH2p+IC4mjRHlNm/IyNnfudsEXaaPLgHDeU0NTs=')
 	'IVdYT0McSfObWOy68igNDsDDSoATbUwNSt/TFEMnu5hV' | ConvertFrom-LPEncryptedData -Key $Key -Base64
+
 	Decrypts the Base64 encoded encrypted string using the specified key
 	#>
 	[CmdletBinding(DefaultParameterSetName='String')]
@@ -1694,14 +1784,17 @@ Function ConvertTo-LPEncryptedString {
 
 	.EXAMPLE
 	ConvertTo-LPEncryptedString -Value 'SecretText'
+
 	Encrypts the input string 'SecretText
 
 	.EXAMPLE
 	$DecryptedAccounts.Username | ConvertTo-LPEncryptedString
+
 	Encrypts the names of the accounts in the $DecryptedAccounts variable
 
 	.EXAMPLE
 	ConvertTo-LPEncryptedString -Bytes $Bytes
+
 	Converts the byte array $Bytes into a SecureString object, suitable for in memory storage
 	#>
 
@@ -1777,10 +1870,12 @@ Function ConvertFrom-Hex {
 
 	.EXAMPLE
 	ConvertFrom-Hex '56616C7565'
+
 	Decodes the hex string to 86,97,108,117,101 ('Value')
 
 	.EXAMPLE
 	'506970656C696E6556616C7565' | ConvertFrom-Hex
+
 	Decodes the hex string to 80,105,112,101,108,105,110,101,86,97,108,117,101 ('PipelineValue')
 	#>
 
@@ -1818,6 +1913,7 @@ Function Confirm-Password {
 
 	.EXAMPLE
 	Confirm-Password
+
 	Checks whether the master password has been verified within the timeout setting,
 	and if not, prompts the user to re-enter their password and verifies it is correct.
 	#>
@@ -1854,6 +1950,7 @@ Function Get-Session {
 
 	.EXAMPLE
 	Get-Session
+
 	Gets the Lastpass session object
 
 	#>
@@ -1879,10 +1976,12 @@ Function Set-Session {
 
 	.EXAMPLE
 	Set-Session $S
+
 	Sets the Lastpass session
 
 	.EXAMPLE
 	$S | Set-Session
+
 	Sets the Lastpass session
 	#>
 
@@ -1902,7 +2001,7 @@ Function Set-Session {
 }
 
 
-$PublicMethods = @(
+$ExportMethods = @(
 	'Connect-Lastpass'
 	'Sync-Lastpass'
 	'Get-Account'
@@ -1911,10 +2010,20 @@ $PublicMethods = @(
 )
 
 If($ModuleParameters.ExportWriteCmdlets){
-	$PublicMethods += @(
+	"Modification cmdlets are currently experimental " +
+	"and should not be used for production workloads.`n" +
+	"DATA LOSS MAY OCCUR!" | Write-Warning
+	$ExportMethods += @(
 		'Set-Account'
 		'Set-Note'
 	)
 }
 
-Export-ModuleMember -Function $PublicMethods
+If($ModuleParameters.Debug){
+	$ExportMethods += @(
+		'Get-Session'
+		'Set-Session'
+	)
+}
+
+Export-ModuleMember -Function $ExportMethods

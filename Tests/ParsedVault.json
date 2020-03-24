@@ -4,7 +4,7 @@
     {
       "ID": "1835977081662683158",
       "Name": "Account1",
-      "Group": "ParentFolder",
+      "Folder": "ParentFolder",
       "URL": "http://ThisIsTheURL",
       "Notes": "!7U¾¨å\fÁïµIS!§ÍÜ\u000bl¡%®ÌÔÁ¡éÈºmìÂ|ª&&Ï¼ÛÈzm#\u001f|ì/bm\u0010.\"\u0001ñ2±©ÿ\"Ò\u001e¸\u0016·ßS\fJ\fIº\t",
       "favorite": false,
@@ -42,7 +42,7 @@
     {
       "ID": "5148901049320353252",
       "Name": "Account2",
-      "Group": "ParentFolder\\SubFolder",
+      "Folder": "ParentFolder\\SubFolder",
       "URL": "http://url.com",
       "Note": "!Bõ/É6(Ä,¡Ù9«PRHvh¬£[)ã\u001bÃ",
       "favorite": true,
@@ -80,7 +80,7 @@
     {
       "ID": "3656362581793908418",
       "Name": "SiteShareTest",
-      "Group": "(Accepted Share Offers)",
+      "Folder": "(Accepted Share Offers)",
       "URL": "http://site.com",
       "Note": "!\\ñ¯V\fZjÒ®!Är}Ô^\u001e\u001a\r\u000bô\u0018aC5C¹|",
       "favorite": false,
@@ -118,7 +118,7 @@
     {
       "ID": "3524762968710500297",
       "Name": "ShareAccount1",
-      "Group": "Shared-Share\\SubShare",
+      "Folder": "Shared-Share\\SubShare",
       "URL": "http://note",
       "Note": null,
       "favorite": false,
@@ -152,12 +152,12 @@
       "LastPasswordChange": "1565839349",
       "DateCreated": "1565839349",
       "Vulnerable": null,
-      "ShareFolderID": "259212291"
+      "ShareID": "259212291"
     },
     {
       "ID": "6274670822055333050",
       "Name": "TestName#$/3",
-      "Group": "Shared-Share2",
+      "Folder": "Shared-Share2",
       "URL": "https://URL/ThisisTheUsername",
       "Note": "!ä°\u001agFY\b\u0005àVí_'ÔÓ×]Àì\u001e%ôë¸}\r¡`,'ÄâÎ\u001a}!×âÍ9­",
       "favorite": false,
@@ -191,14 +191,14 @@
       "LastPasswordChange": "1565839386",
       "DateCreated": "1565839386",
       "Vulnerable": null,
-      "ShareFolderID": "259213521"
+      "ShareID": "259213521"
     }
   ],
   "SecureNotes": [
     {
       "ID": "3365236279341564432",
       "Name": "test",
-      "Group": null,
+      "Folder": null,
       "URL": "http://sn",
       "Notes": "!öG¥PÛ\nï`oM¿ñÂ|gaw5\u0006\u001cõèo}G`ó3\u001d",
       "favorite": false,
@@ -234,7 +234,7 @@
     {
       "ID": "8526543329769000462",
       "Name": "Note In Folder",
-      "Group": "Shared-Share2",
+      "Folder": "Shared-Share2",
       "URL": "http://sn",
       "Notes": "!å´¤xÚæ¹&[=å\u0011\u0018Õ \u0002wk¥zxÕ%nNÀ»a)ªòîÄ·\t§\u0002\u0010\u0001B\u0019qüFÂH6\u0019îÏ<¶ÍàS|\u0003Áà96¦ué\u0001Ïû4\r\u001c·\tòc¢ôÕÁÒfãÐ@{\u0011+I?@W%³ \u0005K\u0000 =;YúÔîTWç@l\"ÂÑXrÈûöâPÊ\u0006¤v7E)ÅWÍìP=ëM|r¤O\u0003ÅÝ~\u0014ª%H~Ô»=×\u001d\u001fä'¾^ôz\u0019y·ÝédQ·Ø)º\u001d!}\u001e®\rÎÓíÊª\u001dõ\tÞ\u001f\u0016íÖà",
       "Favorite": false,
@@ -266,7 +266,7 @@
       "LastPasswordChange": "1565839063",
       "DateCreated": "1565839063",
       "Vulnerable": null,
-      "ShareFolderID": "259213521"
+      "ShareID": "259213521"
     }
   ],
   "Folders": [
@@ -276,7 +276,7 @@
       "name": "",
       "isHidden": false,
       "encgroup": "!Ôuòbt\u0011±º7\u0000÷\reØlPo\u001bÕbþ`ÍÍÛ8tV\u0001réø²ÊÓêÄ\u0013º\u0017_|Y",
-      "group": "ParentFolder\\SubFolder",
+      "Folder": "ParentFolder\\SubFolder",
       "url": "http://group",
       "extra": "",
       "fav": "0",
@@ -322,7 +322,7 @@
       "name": "",
       "isHidden": false,
       "encgroup": "!bó.2o±çñ<hßöÍß@¬@+4E'\r\\XJ",
-      "group": "ParentFolder",
+      "Folder": "ParentFolder",
       "url": "http://group",
       "extra": "",
       "fav": "0",
@@ -368,7 +368,7 @@
       "name": "ShareAccount",
       "isHidden": false,
       "encgroup": "!Y)û\u001eiæÖ:¬Ésx[u\u0007ñÙ\u001a_h\u0005â»zä",
-      "group": "Shared-Share\\SubShare",
+      "Folder": "Shared-Share\\SubShare",
       "url": "http://group",
       "extra": "",
       "fav": "0",
@@ -406,7 +406,7 @@
       "breached": "0",
       "template": "",
       "fields": [],
-      "sharefolderid": "259212291",
+      "ShareID": "259212291",
       "unencryptedUsername": "usern"
     },
     {
@@ -415,7 +415,7 @@
       "name": "",
       "isHidden": false,
       "encgroup": "",
-      "group": "Shared-Share2",
+      "Folder": "Shared-Share2",
       "url": "http://group",
       "extra": "",
       "fav": "0",
@@ -453,7 +453,7 @@
       "breached": "0",
       "template": "",
       "fields": [],
-      "sharefolderid": "259213521",
+      "ShareID": "259213521",
       "unencryptedUsername": ""
     }
   ],

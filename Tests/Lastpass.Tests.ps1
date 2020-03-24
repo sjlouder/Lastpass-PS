@@ -469,22 +469,21 @@ InModuleScope Lastpass {
 			$Blob.Version | Should -Be 107
 		}
 
-		# TODO: Test all properties of all objects for below tests
 		It 'Parses and decrypts the accounts' {
 			$Blob.Accounts.Length | Should -Be 5
 			$Expected.Accounts | ForEach {
 				$Reference = $_
 				$Account = ($Blob.Accounts | Where ID -eq $Reference.ID)
 				$Account | Should -Not -BeNullOrEmpty
-				Compare-Object $Reference.PSObject.Properties $Account.PSObject.Properties -Property Name |
+				Compare-Object $Reference.PSObject.Properties $Account.Keys -Property Name |
 					Should -BeNullOrEmpty
 
-				$Account.PSObject.Properties.Name |
-					Where {$_ -notin 'Username', 'Password', 'Notes', 'Credential'} |
+				$Account.Keys |
+					Where {$_ -notin 'PSTypeName', 'Username', 'Password', 'Notes', 'Credential'} |
 					ForEach {
 						If($Account.$_ -is [DateTime]){
 							$Account.$_.DateTime | Should -Be ($Epoch.AddSeconds([Int]$Reference.$_).DateTime)
-						}Else{ $Account.$_ | Should -Be $Reference.$_ }
+						}Else{ $Account.$_ | Should -Be $Reference.$_ -Because $_}
 					}
 			}
 		}
@@ -524,18 +523,18 @@ InModuleScope Lastpass {
 				# $_ | Out-String | Write-Host
 				$Folder = ($Blob.Folders | Where ID -eq $Reference.ID)
 				$Folder | Should -Not -BeNullOrEmpty
-				Compare-Object $Reference.PSObject.Properties $Folder.PSObject.Properties -Property Name |
+				Compare-Object $Reference.PSObject.Properties $Folder.Keys -Property Name |
 					Should -BeNullOrEmpty
 
-				$Folder.PSObject.Properties.Name | ForEach {
+				$Folder.Keys | Where { $_ -notin 'PSTypeName' } | ForEach {
 					# Write-Host $_
 					# Write-Host $Folder.$_
 					If($_ -eq 'Name'){
-						$Folder.$_ | Should -Be $Reference.Group
+						$Folder.$_ | Should -Be $Reference.Folder
 					}
 					ElseIf($Folder.$_ -is [DateTime]){
 						$Folder.$_.DateTime | Should -Be ($Epoch.AddSeconds([Int]$Reference.$_).DateTime)
-					}Else{ $Folder.$_ | Should -Be $Reference.$_ }
+					}Else{ $Folder.$_ | Should -Be $Reference.$_ -Because $_ }
 				}
 			}
 		}
@@ -572,6 +571,7 @@ InModuleScope Lastpass {
 			}
 		}
 	}
+
 	Describe Get-Account {
 
 		BeforeAll {
@@ -626,12 +626,12 @@ InModuleScope Lastpass {
 			$Result | Should -BeOfType "PSCustomObject('Lastpass.Account')"
 		}
 
-		It 'Decrypts the folder' {
-			$Result.Group | Should -Be $Expected.Group
-		}
-
 		It 'Decrypts the username' {
 			$Result.Username | Should -Be $Expected.Username
+		}
+
+		It 'Decrypts the password' {
+			$Result.Password | Should -Be $Expected.Password
 		}
 
 		It 'Decrypts the note content' {
@@ -659,6 +659,8 @@ InModuleScope Lastpass {
 		It 'Creates a PSCredential property' {
 			$Result.Credential | Should -Not -BeNullOrEmpty
 			$Result.Credential | Should -BeOfType PSCredential
+			$Result.Credential.Username | Should -Be $Expected.Username
+			$Result.Credential.GetNetworkCredential().Password | Should -Be $Expected.Password
 		}
 
 	}
@@ -667,7 +669,13 @@ InModuleScope Lastpass {
 
 		Mock Set-Item
 
+		# Just pass account, it passes the properties
+		# If parameter is passed, it overrides the account value
+		# Pipeline
+		# Non-pipeline
+
 		$Account = [PSCustomObject] @{
+			PSTypeName	 = 'Lastpass.Account'
 			ID           = '5148901049320353252'
 			Name         = 'sitename'
 			URL          = 'http://url.com'
@@ -693,14 +701,32 @@ InModuleScope Lastpass {
 				$Name		-eq 'sitename' -and
 				$Folder		-eq 'NewFolder1\NewFolder2' -and
 				$URL		-eq 'http://url.com' -and
-				$Username	-eq 'usernamehere2' -and
-				$Password	-eq 'fdsafdasfda' -and
+				$Credential -eq $Account.Credential -and
 				$Notes		-eq 'notecontent3' -and
 				!$Favorite	-and
 				!$AutoLogin	-and
 				!$DisableAutofill
 			}
 		}
+		$Account | Add-Member -Type NoteProperty -Name ShareID -Value 10249432
+
+		It 'Includes the ShareID if the account is shared' {
+			$Account | Set-Account
+			Assert-MockCalled Set-Item -Scope It -ParameterFilter {
+				$ID				-eq '5148901049320353252' -and
+				$Name			-eq 'sitename' -and
+				$Folder			-eq 'NewFolder1\NewFolder2' -and
+				$ShareID		-eq 10249432 -and
+				$URL			-eq 'http://url.com' -and
+				$Credential 	-eq $Account.Credential -and
+				$Notes			-eq 'notecontent3' -and
+				!$Favorite		-and
+				!$AutoLogin		-and
+				!$DisableAutofill
+			}
+		}
+
+
 	}
 
 	Describe Get-Note {
@@ -778,7 +804,7 @@ InModuleScope Lastpass {
 			'Password',
 			'Notes' | ForEach {
 				If($Expected.$_){
-					$Result.$_ | Should -Be $Expected.$_
+					$Result.Notes.$_ | Should -Be $Expected.$_
 				}
 			}
 
@@ -790,9 +816,10 @@ InModuleScope Lastpass {
 		Mock Set-Item
 
 		$Note = [PSCustomObject] @{
+			PSTypeName	 = 'Lastpass.SecureNote'
 			ID           = '5148901049320353252'
 			Name         = 'sitename'
-			Content      = 'notecontent3'
+			Notes	     = 'notecontent3'
 			Folder       = 'NewFolder1\NewFolder2'
 			Favorite     = $False
 			LastModified = [DateTime] '4/3/19 4:58:05 AM'
@@ -802,11 +829,43 @@ InModuleScope Lastpass {
 		$Note | Set-Note
 
 		It 'Calls Set-Item with the SecureNote parameter' {
-			Assert-MockCalled Set-Item -ParameterFilter { $SecureNote }
+			Assert-MockCalled Set-Item -ParameterFilter {
+				$ID		-eq '5148901049320353252' -and
+				$Name	-eq 'sitename' -and
+				$Notes	-eq 'notecontent3' -and
+				$Folder	-eq 'NewFolder1\NewFolder2' -and
+				!$PasswordProtect -and
+				!$Favorite
+			}
 		}
 
+		$Note | Add-Member -Type NoteProperty -Name ShareID -Value 10249432
 
+		It 'Includes the ShareID if the SecureNote is shared' {
+			$Note | Set-Note
+			Assert-MockCalled Set-Item -Scope It -ParameterFilter {
+				$ID			-eq '5148901049320353252' -and
+				$Name		-eq 'sitename' -and
+				$ShareID	-eq 10249432 -and
+				$Notes		-eq 'notecontent3' -and
+				$Folder		-eq 'NewFolder1\NewFolder2' -and
+				!$PasswordProtect -and
+				!$Favorite
+			}
+		}
 
+		$Note.Notes = [Ordered] @{
+			Name = 'Note'
+			NoteType = 'Test'
+			IP = '127.0.0.1'
+		}
+
+		It 'Encodes the custom notes' {
+			$Note | Set-Note
+			Assert-MockCalled Set-Item -Scope It -ParameterFilter {
+				$Notes -eq "Name:Note`nNoteType:Test`nIP:127.0.0.1`n"
+			}
+		}
 	}
 
 	Describe New-Password {
@@ -861,7 +920,6 @@ InModuleScope Lastpass {
 	}
 
 	Describe Set-Item {
-
 		BeforeAll {
 			$Script:Blob = Get-Content $ScriptRoot/ParsedVault.json | ConvertFrom-Json -AsHashtable
 			$Script:Session = [PSCustomObject] @{
@@ -872,6 +930,9 @@ InModuleScope Lastpass {
 				Username = 'Username'
 				Iterations = '1'
 			}
+			$Script:Blob.SharedFolders | % {$_.Key = [Byte[]][Char[]] $_.Key}
+			$Confirm = $ConfirmPreference
+			$ConfirmPreference = 'None'
 		}
 
 		$UpdateAPIMockParam = @{
@@ -915,6 +976,7 @@ InModuleScope Lastpass {
 		Mock Sync-Lastpass {}
 
 		$Account = [PSCustomObject] @{
+			PSTypeName	 = 'Lastpass.Account'
 			ID           = '5148901049320353252'
 			Name         = 'sitename'
 			URL          = 'http://url.com'
@@ -936,12 +998,21 @@ InModuleScope Lastpass {
 		# Test non-pipeline use case
 		# Set-Account -ID $Account.ID -Name 'NoteName' -PasswordProtect
 		#TODO: Test multiline notes
+		#TODO: Test incomplete account/parameters
+		#TODO: Shared item
 
-		$Result = $Account | Set-Item -Username 'NewUsername' -Password 'newPassword'
+		$Credential = [PSCredential]::New(
+			'NewUsername',
+			(ConvertTo-SecureString -A -F 'NewPassword')
+		)
+
+		$Result = $Account | Set-Item -Credential $Credential
 
 
 		It 'Calls the edit account API' {
-			Assert-MockCalled Invoke-RestMethod
+			Assert-MockCalled Invoke-RestMethod -ParameterFilter {
+				$URI -eq 'https://lastpass.com/show_website.php'
+			}
 		}
 
 		It 'Encrypts the Account Name' {
@@ -1020,6 +1091,57 @@ InModuleScope Lastpass {
 			$Result.Password | Should -Be 'newPassword'
 		}
 
+
+		Context 'Shared Account' {
+			Mock ConvertTo-LPEncryptedString { $Value }
+			Mock Invoke-RestMethod { $Body | Write-Host }
+			$Account | Add-Member -MemberType 'NoteProperty' -Name 'ShareID' -Value $Blob.SharedFolders[0].ID
+			$Account.Folder = 'SharedFolder\{0}' -f $Account.Folder
+
+			$Account | Set-Account
+
+			It 'Includes the sharedfolderid parameter' {
+				Assert-MockCalled Invoke-RestMethod -Scope Context -ParameterFilter {
+					$Body.SharedFolderID -eq $Blob.SharedFolders[0].ID
+				}
+			}
+
+			It 'Strips the Shared folder name from the folder property' {
+				Assert-MockCalled ConvertTo-LPEncryptedString -Scope Context -ParameterFilter {
+					$Value -eq 'NewFolder1\NewFolder2'
+				}
+			}
+
+			It 'Uses the shared folder key to encrypt the account information' {
+				Assert-MockCalled ConvertTo-LPEncryptedString -ParameterFilter {
+					([String] $Key) -eq ([String]$Blob.SharedFolders[0].Key) -and
+					$Value -eq $Account.Name
+				}
+				Assert-MockCalled ConvertTo-LPEncryptedString -ParameterFilter {
+					([String] $Key) -eq ([String]$Blob.SharedFolders[0].Key) -and
+					$Value -eq 'NewFolder1\NewFolder2'
+				}
+				Assert-MockCalled ConvertTo-LPEncryptedString -ParameterFilter {
+					([String] $Key) -eq ([String]$Blob.SharedFolders[0].Key) -and
+					$Value -eq $Account.Notes
+				}
+				Assert-MockCalled ConvertTo-LPEncryptedString -ParameterFilter {
+					([String] $Key) -eq ([String]$Blob.SharedFolders[0].Key) -and
+					$Value -eq $Account.Username
+				}
+				Assert-MockCalled ConvertTo-LPEncryptedString -ParameterFilter {
+					([String] $Key) -eq ([String]$Blob.SharedFolders[0].Key) -and
+					$Value -eq $Account.Password
+				}
+			}
+
+			It 'Throws if the share is readonly' {
+				$Blob.SharedFolders[0].ReadOnly = $True
+				{ $Account | Set-Account } | Should -Throw 'Account sitename is in a read-only shared folder'
+			}
+
+
+		}
 		#LastAccessed/LastModified?
 
 		$Note = [PSCustomObject] @{
@@ -1034,12 +1156,13 @@ InModuleScope Lastpass {
 
 		$Note | Set-Item -SecureNote
 
-		It 'Sets the URL to "http://sn"' {
+		It 'Sets the URL for SecureNotes to "http://sn"' {
 			Assert-MockCalled Invoke-RestMethod -ParameterFilter {
 				$Body.URL -eq '687474703a2f2f736e'
 			}
 		}
 
+		AfterAll { $ConfirmPreference = $Confirm }
 	}
 
 	Describe ConvertFrom-LPEncryptedData {
@@ -1256,7 +1379,7 @@ Describe 'Documentation Tests' -Tag Documentation {
 			}
 			If($_.Parameters){
 				It 'Has a description for each parameter' {
-					$_.Parameters.Parameter | ForEach {
+				$_.Parameters.Parameter | Where { $_.Name -notin 'WhatIf', 'Confirm' } | ForEach {
 						If(!$_.Description){
 							Throw "Parameter $($_.Name) does not have a description"
 						}

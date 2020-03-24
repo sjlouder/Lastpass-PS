@@ -6,11 +6,11 @@ Lastpass Powershell Module
 # DESCRIPTION
 Powershell module to interact with Lastpass.
  
-Built on pure Powershell/.NET core, designed to work without any other external dependencies to maximize cross platform portability.
+Built on pure Powershell/.NET core, designed to work without any other external dependencies (eg. cygwin, openSSL) to maximize cross platform portability.
 
 Based on [lastpass-cli](https://github.com/lastpass/lastpass-cli) and [lastpass-sharp](https://github.com/detunized/lastpass-sharp).
 
-# EXAMPLE
+# QUICKSTART
 ```
 # Prompts for credentials
 Connect-Lastpass
@@ -38,6 +38,7 @@ $Password = New-Password -Length 23 -ValidCharacters 'A-Za-z0-9%*&'
 
 ```
 For more examples, check Tests/Lastpass.Tests.ps1.
+For specific documentation of a function, use ```Get-Help <functionName>```
 
 
 # STATUS AND FEATURES
@@ -57,7 +58,8 @@ Experimental/in development:
 * Update accounts and notes
 	* **WARNING**: Not fully tested. **Create backup copies of your data before using this project to make any modifications.**
 	* **WARNING**: Shared items not currently supported
-	* **WARNING**: Custom Notes not supported
+	* **WARNING**: Custom Notes not fully tested
+	* **WARNING**: form fields (and likely attachments) are not currently supported and will be **lost**!
 	* **NOTE**: These functions (Set-Account and Set-Note) are not exposed by default while they are in
 	development. In order to enable these functions, pass in a hashtable to the module with a key
 	named "ExportWriteCmdlets" and the value set to $True, eg:
@@ -106,7 +108,7 @@ Currently: download; Import-Module /Path/To/Lastpass-PS/Lastpass
 Eventually: Install-Module Lastpass #From Powershell Gallery
 
 # CONTRIBUTING
-While this is still early in development (pre-1.0), I'm mostly looking for testers, feature ideas/priority, and help with documentation. Pull requests are welcome, but this is a side project so collaboration will likely be slow.
+While this is still early in development (pre-1.0), I'm mostly looking for testers and test writers, feature ideas/priority, and help with documentation. Pull requests are welcome, but this is a side project so collaboration will likely be slow.
 
 # LICENSE
 GPLv2+. See LICENSE file for details
