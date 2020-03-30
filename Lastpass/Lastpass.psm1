@@ -164,6 +164,20 @@ $Script:Schema = @{
 			'ReadOnly'
 		)
 	}
+	FormFields = @{
+		Fields = [Ordered] @{
+			Name = 'String'
+			Type = 'String'
+			Value = 'Other'
+			Checked = 'Boolean'
+		}
+		DefaultFields = @(
+			'Name'
+			'Type'
+			'Value'
+			'Checked'
+		)
+	}
 }
 
 $Schema.GetEnumerator() | ForEach {
@@ -577,6 +591,39 @@ Function Sync-Lastpass {
 
 				Write-Debug "END ACCOUNT DECODE"
 			}
+			{$_ -in 'ACFL','ACOF'} {
+				Write-Debug 'BEGIN FORMFIELD DECODE'
+				If(!$Blob.Accounts[-1]){ Write-Error 'Parse failed. Unable to find account for form fields' }
+				If(!$Blob.Accounts[-1].FormFields){ $Blob.Accounts[-1].FormFields = @() }
+				$FormField = @{}
+
+
+				$Schema.FormFields.Fields.Keys | ForEach {
+					Write-Debug "Field: $_"
+					$Item = Read-Item -Blob $Data -Index $ItemIndex -Debug:$False
+					'Returned length: {0}' -f $Item.Length | Write-Debug
+					$ItemIndex += $Item.length + 4
+
+					$FormField[$_] = Switch($Schema.FormFields.Fields[$_]){
+						Boolean { !!([Int] ([Char[]] $Item -join '')) }
+						String { If($Item){[Char[]] $Item -join ''} }
+						Default { $Item }
+					}
+					Write-Debug "End Field $_"
+				}
+				Switch -Regex ($FormField.Type){
+					'email|tel|text|password|textarea' {
+						$FormField.Value = ConvertTo-LPEncryptedString @Param -Bytes $FormField.Value
+					}
+					Default {
+						If($FormField.Value){
+							$FormField.Value = [Char[]] $FormField.Value -join ''
+						}
+					}
+				}
+				$Blob.Accounts[-1].FormFields += $FormField
+				Write-Debug 'END FORMFIELD DECODE'
+			}
 			SHAR {
 				Write-Debug "BEGIN SHARE DECODE"
 				$Folder = @{ PSTypeName = 'Lastpass.SharedFolder' }
@@ -674,13 +721,29 @@ Function Get-Account {
 				}
 
 				$_.GetEnumerator() | ForEach {
-					If($_.Value -isnot [SecureString]){
-						$Account[$_.Key] = $_.Value
+					If($_.Key -eq 'FormFields'){
+						$Account.FormFields = [Ordered] @{}
+						$_.Value | ForEach {
+							$_ | Out-String | Write-Debug
+							Write-Debug "FormField: $($_.Value.Name)"
+							$_.Value | OUt-String | Write-Debug
+							If($_.Type -eq 'Checkbox'){
+								$Account.FormFields[$_.Name] = $_.Checked
+							}
+							Else{
+								If($_.Value -is [SecureString]){
+									$Param.SecureString = $_.Value
+									$Account.FormFields[$_.Name] = ConvertFrom-LPEncryptedData @Param
+								}
+								Else{ $Account.FormFields[$_.Name] = $_.Value }
+							}
+						}
 					}
-					Else{
+					ElseIf($_.Value -is [SecureString]){
 						$Param.SecureString = $_.Value
 						$Account[$_.Key] = ConvertFrom-LPEncryptedData @Param
 					}
+					Else{ $Account[$_.Key] = $_.Value }
 				}
 
 				$Credential = @{ Username = $Account.Username }

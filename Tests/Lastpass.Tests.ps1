@@ -469,7 +469,7 @@ InModuleScope Lastpass {
 			$Blob.Version | Should -Be 107
 		}
 
-		It 'Parses and decrypts the accounts' {
+		It 'Parses the accounts' {
 			$Blob.Accounts.Length | Should -Be 5
 			$Expected.Accounts | ForEach {
 				$Reference = $_
@@ -479,7 +479,7 @@ InModuleScope Lastpass {
 					Should -BeNullOrEmpty
 
 				$Account.Keys |
-					Where {$_ -notin 'PSTypeName', 'Username', 'Password', 'Notes', 'Credential'} |
+					Where {$_ -notin 'PSTypeName', 'Username', 'Password', 'Notes', 'Credential', 'FormFields'} |
 					ForEach {
 						If($Account.$_ -is [DateTime]){
 							$Account.$_.DateTime | Should -Be ($Epoch.AddSeconds([Int]$Reference.$_).DateTime)
@@ -499,7 +499,7 @@ InModuleScope Lastpass {
 			$Account.LastAccessed | Should -Be ([DateTime] '01/25/2019 3:09:08 AM')
 		}
 
-		It 'Parses and decrypts the secure notes' {
+		It 'Parses the secure notes' {
 			$Blob.SecureNotes.Length | Should -Be 2
 			$Expected.SecureNotes | ForEach {
 				$Reference = $_
@@ -535,6 +535,25 @@ InModuleScope Lastpass {
 					ElseIf($Folder.$_ -is [DateTime]){
 						$Folder.$_.DateTime | Should -Be ($Epoch.AddSeconds([Int]$Reference.$_).DateTime)
 					}Else{ $Folder.$_ | Should -Be $Reference.$_ -Because $_ }
+				}
+			}
+		}
+
+		It 'Parses the account form fields' {
+			$Account = $Blob.Accounts | Where ID -eq '5148901049320353252'
+			$Account.FormFields | Should -Not -BeNullOrEmpty
+			$Account.FormFields | Should -BeOfType Collections.Specialized.OrderedDictionary
+
+			$ExpectedAccount = $Expected | Where ID -eq $Account.ID
+			$ExpectedAccount.FormFields | ForEach {
+				$ExpectedField = $_
+				$Field = $Account.FormFields | Where Name -eq $_.Name
+				$Field | Should -Not -BeNullOrEmpty
+				'Name',
+				'Type',
+				'Value',
+				'Checked' | ForEach {
+					$Field[$_] | Should -Be $ExpectedField[$_]
 				}
 			}
 		}
@@ -580,6 +599,11 @@ InModuleScope Lastpass {
 				$Account = $_
 				'Username','Password','Notes' | ForEach {
 					If($Account[$_]){$Account[$_] = ConvertTo-SecureString -A -F $Account[$_]}
+				}
+				If($_.FormFields){
+					$_.FormFields |
+						Where Type -match 'email|tel|text|password|textarea' |
+						ForEach { $_.Value = $_.Value | ConvertTo-SecureString -A -F }
 				}
 			}
 			$Script:PasswordPrompt = [DateTime]::Now
@@ -638,12 +662,24 @@ InModuleScope Lastpass {
 			$Result.Notes | Should -Be $Expected.Notes
 		}
 
+		It 'Decrypts and exposes the form fields as an ordered dictionary' {
+			$Result = Get-Account 'Account2'
+			$Expected = $ExpectedAccounts | Where Name -eq 'Account2'
+			$Result.FormFields | Should -Not -BeNullOrEmpty
+			$Result.FormFields | Should -BeOfType Collections.Specialized.OrderedDictionary
+			$Expected.FormFields.Keys | ForEach {
+				$Result.FormFields[$_] | Should -Be $Expected.FormFields[$_] -Because $_
+			}
+
+		}
+
 		It 'Updates the LastAccessed time' {
 			$Result.LastAccessed.DateTime | Should -Be $Now.DateTime
 		}
 
 		It 'Accepts pipeline input' {
 			$Result = 'Account1' | Get-Account
+			$Result | Should -BeOfType "PSCustomObject('Lastpass.Account')"
 			$Result.ID | Should -Be 1835977081662683158
 		}
 
@@ -797,15 +833,16 @@ InModuleScope Lastpass {
 			Assert-MockCalled Confirm-Password
 		}
 
-		It 'Parses custom note properties and exposes them as properties' {
-			'NoteType',
+		It 'Parses custom note properties and exposes them as an ordered hashtable' {
+			$Result.Notes | Should -Not -BeNullOrEmpty
+			$Result.Notes | Should -BeOfType Collections.Specialized.OrderedDictionary
+			$Result.NoteType | Should -Be $Expected.NoteType
+
 			'Hostname',
 			'Username',
 			'Password',
 			'Notes' | ForEach {
-				If($Expected.$_){
-					$Result.Notes.$_ | Should -Be $Expected.$_
-				}
+				$Result.Notes.$_ | Should -Be $Expected.Notes.$_ -Because $_
 			}
 
 		}

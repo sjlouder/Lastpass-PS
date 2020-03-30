@@ -75,7 +75,64 @@
       "HasBeenShared": true,
       "LastPasswordChange": "1554769237",
       "DateCreated": "1553910491",
-      "Vulnerable": null
+      "Vulnerable": null,
+      "FormFields": [
+        {
+          "otherfield": false,
+          "Name": "textfield",
+          "Type": "text",
+          "Value": "!¾<Qrßh\u0006\u0012\u0005\u0019cÈ3¬Sö\\æõ®Î>hÒ\u000e¯^",
+          "Checked": false,
+          "formname": "",
+          "urid": "0",
+          "otherlogin": "0",
+          "url": ""
+        },
+        {
+          "otherfield": false,
+          "Name": "passwordfield",
+          "Type": "password",
+          "Value": "!åEÝÜoçªJiVmïl~ ÜÍ\t-lëC0\u000eéÈwÙ",
+          "Checked": false,
+          "formname": "",
+          "urid": "0",
+          "otherlogin": "0",
+          "url": ""
+        },
+        {
+          "otherfield": false,
+          "Name": "selectfield",
+          "Type": "select-one",
+          "Value": "select value",
+          "Checked": false,
+          "formname": "",
+          "urid": "0",
+          "otherlogin": "0",
+          "url": ""
+        },
+        {
+          "otherfield": false,
+          "Name": "checkedbox",
+          "Type": "checkbox",
+          "Value": "",
+          "Checked": true,
+          "formname": "",
+          "urid": "0",
+          "otherlogin": "0",
+          "url": ""
+        },
+        {
+          "otherfield": false,
+          "Name": "uncheckedbox",
+          "Type": "checkbox",
+          "Value": "",
+          "Checked": false,
+          "formname": "",
+          "urid": "0",
+          "otherlogin": "0",
+          "url": ""
+        }
+      ]
     },
     {
       "ID": "3656362581793908418",
