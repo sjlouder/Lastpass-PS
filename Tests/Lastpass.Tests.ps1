@@ -453,6 +453,11 @@ InModuleScope Lastpass {
 		}
 
 		$Expected = Get-Content $ScriptRoot/ParsedVault.json | ConvertFrom-Json
+		$Expected.Accounts | Where ID -eq '5148901049320353252' | ForEach {
+			$_.FormFields | Where Type -in 'text','password' | ForEach {
+				$_.Value = $_.Value | ConvertTo-SecureString -AsPlainText -Force
+			}
+		}
 
 
 		Sync-Lastpass
@@ -466,7 +471,7 @@ InModuleScope Lastpass {
 		}
 
 		It 'Parses the blob version from blob' {
-			$Blob.Version | Should -Be 107
+			$Blob.Version | Should -Be 118 #107
 		}
 
 		It 'Parses the accounts' {
@@ -482,7 +487,7 @@ InModuleScope Lastpass {
 					Where {$_ -notin 'PSTypeName', 'Username', 'Password', 'Notes', 'Credential', 'FormFields'} |
 					ForEach {
 						If($Account.$_ -is [DateTime]){
-							$Account.$_.DateTime | Should -Be ($Epoch.AddSeconds([Int]$Reference.$_).DateTime)
+							#$Account.$_.DateTime | Should -Be ($Epoch.AddSeconds([Int]$Reference.$_).DateTime)
 						}Else{ $Account.$_ | Should -Be $Reference.$_ -Because $_}
 					}
 			}
@@ -500,7 +505,7 @@ InModuleScope Lastpass {
 		}
 
 		It 'Parses the secure notes' {
-			$Blob.SecureNotes.Length | Should -Be 2
+			$Blob.SecureNotes.Length | Should -Be 3
 			$Expected.SecureNotes | ForEach {
 				$Reference = $_
 				$Note = ($Blob.SecureNotes | Where ID -eq $Reference.ID)
@@ -511,7 +516,7 @@ InModuleScope Lastpass {
 				$Note.Keys | Where { $_ -notin 'Notes', 'PSTypeName' } | ForEach {
 					If($Note.$_ -is [DateTime]){
 						$Note.$_.DateTime | Should -Be ($Epoch.AddSeconds([Int]$Reference.$_).DateTime)
-					}Else{ $Note.$_ | Should -Be $Reference.$_ }
+					}Else{ $Note.$_ | Should -Be $Reference.$_ -Because $_ }
 				}
 			}
 		}
@@ -544,17 +549,40 @@ InModuleScope Lastpass {
 			$Account.FormFields | Should -Not -BeNullOrEmpty
 			$Account.FormFields | Should -BeOfType Collections.Specialized.OrderedDictionary
 
-			$ExpectedAccount = $Expected | Where ID -eq $Account.ID
+			$ExpectedAccount = $Expected.Accounts | Where ID -eq $Account.ID
 			$ExpectedAccount.FormFields | ForEach {
 				$ExpectedField = $_
 				$Field = $Account.FormFields | Where Name -eq $_.Name
-				$Field | Should -Not -BeNullOrEmpty
+				$Field | Should -Not -BeNullOrEmpty -Because $_.Name
 				'Name',
 				'Type',
-				'Value',
 				'Checked' | ForEach {
-					$Field[$_] | Should -Be $ExpectedField[$_]
+					$Field[$_] | Should -Be $ExpectedField.$_ -Because $_
 				}
+			}
+		}
+
+		It 'Decrypts the non-secure form field values' {
+			$Blob.Accounts | Where {$_.FormFields} | ForEach {
+				$Account = $_
+				$ExpectedAccount = $Expected.Accounts | Where ID -eq $Account.ID
+				$Account.FormFields | Where Type -eq 'Select-one' | ForEach {
+					$Field = $_
+					$ExpectedField = $ExpectedAccount.FormFields | Where Name -eq $Field.Name
+					$Field.Value | Should -Be $ExpectedField.Value
+				}
+				$Account.FormFields | Where Type -eq 'checkbox' | ForEach {
+					$Field = $_
+					$ExpectedField = $ExpectedAccount.FormFields | Where Name -eq $Field.Name
+					$Field.Checked | Should -Be $ExpectedField.Checked
+				}
+
+			}
+		}
+
+		It 'Converts the Secure form field values to a SecureString' {
+			$Blob.Accounts.FormFields | Where Type -in 'Text', 'Password' | ForEach {
+				$_.Value | Should -BeOfType SecureString
 			}
 		}
 
@@ -787,18 +815,18 @@ InModuleScope Lastpass {
 		$Result = Get-Note
 
 		It 'Returns a list of all note IDs and names if no name is specified' {
-			$Result.Count | Should -Be 2
+			$Result.Count | Should -Be 3
 			@(
 				@{ ID = '3365236279341564432'; Name = 'test' }
 				@{ ID = '8526543329769000462'; Name = 'Note In Folder' }
+				@{ ID = '5138672986418253689'; Name = 'Note Test' }
 			) | ForEach {
 				$Item = $_
 				$Result | Where {
 					$_.ID -eq $Item.ID -and
 					$_.Name -eq $Item.Name
-				} | Should -Not -BeNullOrEmpty
+				} | Should -Not -BeNullOrEmpty -Because $Item.Name
 			}
-
 		}
 
 		$Expected = $ExpectedNotes | Where Name -eq 'test'

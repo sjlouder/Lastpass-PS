@@ -495,11 +495,10 @@ Function Sync-Lastpass {
 	$Response = Invoke-RestMethod @Param
 
 	If($Response.Error){ Throw $Response.Error.Cause }
-	$Response = [Byte[]][Char[]] $Response
-	#If($PSBoundParameters.Debug){ Return $Response }
+	If($PSBoundParameters.Debug){ Return $Response }
 	#"Response:`n{0}" -f $Response | Write-Debug
-	#$Response = ([char[]][Convert]::FromBase64String($Response)) -join ''
-	$Script:LastSyncTime = Get-Date
+	# Return ([char[]][Convert]::FromBase64String($Response)) -join ''
+	$Response = [Byte[]][Char[]] $Response
 
 	#TODO: Cleanup debug output.
 	#	Wrap parse in try/catch and provide info in catch error
@@ -595,8 +594,7 @@ Function Sync-Lastpass {
 				Write-Debug 'BEGIN FORMFIELD DECODE'
 				If(!$Blob.Accounts[-1]){ Write-Error 'Parse failed. Unable to find account for form fields' }
 				If(!$Blob.Accounts[-1].FormFields){ $Blob.Accounts[-1].FormFields = @() }
-				$FormField = @{}
-
+				$FormField = [Ordered] @{}
 
 				$Schema.FormFields.Fields.Keys | ForEach {
 					Write-Debug "Field: $_"
@@ -615,11 +613,7 @@ Function Sync-Lastpass {
 					'email|tel|text|password|textarea' {
 						$FormField.Value = ConvertTo-LPEncryptedString @Param -Bytes $FormField.Value
 					}
-					Default {
-						If($FormField.Value){
-							$FormField.Value = [Char[]] $FormField.Value -join ''
-						}
-					}
+					Default { $FormField.Value = [Char[]] $FormField.Value -join '' }
 				}
 				$Blob.Accounts[-1].FormFields += $FormField
 				Write-Debug 'END FORMFIELD DECODE'
@@ -668,7 +662,7 @@ Function Sync-Lastpass {
 		}
 	}
 
-
+	$Script:LastSyncTime = Get-Date
 	$Script:Blob = [PSCustomObject] $Script:Blob
 	If($PSBoundParameters.Debug){ Write-Output $Script:Blob }
 
