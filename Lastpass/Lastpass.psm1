@@ -847,6 +847,7 @@ Function Set-Account {
 	)
 
 	"Set-Account called with parameters:`n{0}" -f ($PSBoundParameters | Out-String) | Write-Debug
+	If($FormFields){ Throw 'Updating accounts with form fields not supported currently' }
 
 	$Param = @{
 		ID				= $Account.ID
