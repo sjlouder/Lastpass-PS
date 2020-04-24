@@ -698,7 +698,6 @@ InModuleScope Lastpass {
 			$Expected.FormFields.Keys | ForEach {
 				$Result.FormFields[$_] | Should -Be $Expected.FormFields[$_] -Because $_
 			}
-
 		}
 
 		It 'Updates the LastAccessed time' {
@@ -726,7 +725,6 @@ InModuleScope Lastpass {
 			$Result.Credential.Username | Should -Be $Expected.Username
 			$Result.Credential.GetNetworkCredential().Password | Should -Be $Expected.Password
 		}
-
 	}
 
 	Describe Set-Account {
@@ -789,8 +787,6 @@ InModuleScope Lastpass {
 				!$DisableAutofill
 			}
 		}
-
-
 	}
 
 	Describe Get-Note {
@@ -1115,6 +1111,39 @@ InModuleScope Lastpass {
 		It 'Encodes the URL' {
 			Assert-MockCalled Invoke-RestMethod -ParameterFilter {
 				$Body.URL -eq '687474703a2f2f75726c2e636f6d'
+			}
+		}
+		#TODO: Refactor FormFields to be PSCustomObject instead of dict
+		It 'Encodes the form fields' {
+			$FormFields = @(
+				@{ Name = 'email';		Type = 'email'; 		Value = 'email@address.com' }
+				@{ Name = 'phone';		Type = 'tel'; 			Value = '1234567890' }
+				@{ Name = 'username';	Type = 'text'; 			Value = 'test' }
+				@{ Name = 'password';	Type = 'password'; 		Value = 'hardtoguess' }
+				@{ Name = 'feedback';	Type = 'textarea'; 		Value = 'lots of text here' }
+				@{ Name = 'which'; 	 	Type = 'select-one';	Value = 'selected' }
+				@{ Name = 'remember';	Type = 'checkbox';		Checked = $True }
+				@{ Name = 'yes_or_no';	Type = 'radio';			Checked = $False }
+			) | ForEach { 
+				$_.PSTypeName = 'Lastpass.FormField'
+				[PSCustomObject] $_
+			}
+
+			$Account | Set-Item -FormFields $FormFields
+			Assert-MockCalled Invoke-RestMethod -Scope It -ParameterFilter {
+				$FormString = (([Char[]] ($Body.Data | ConvertFrom-Hex)) -join '') -split "`n"
+				# $FormString | Write-Host
+				$URI -eq 'https://lastpass.com/show_website.php' -and
+				$FormString[0] -match "0`temail`temail`t" -and
+				$FormString[1] -match "0`tphone`ttel`t" -and
+				$FormString[2] -match "0`tusername`ttext`t" -and
+				$FormString[3] -match "0`tpassword`tpassword`t" -and
+				$FormString[4] -match "0`tfeedback`ttextarea`t" -and
+				$FormString[5] -match "0`twhich`tselect-one`tselected" -and
+				$FormString[6] -match "0`tremember`tcheckbox`t-1" -and
+				$FormString[7] -match "0`tyes_or_no`tradio`t-0" -and
+				$FormString[8] -match "0`taction`t`taction" -and
+				$FormString[9] -match "0`tmethod`t`tmethod"
 			}
 		}
 

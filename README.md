@@ -66,7 +66,7 @@ Experimental/in development:
 	development. In order to enable these functions, pass in a hashtable to the module with a key
 	named "ExportWriteCmdlets" and the value set to $True, eg:
 	```
-	Import-Module Lastpass -ArgumentList @{ EnableWriteCmdlets = $True }
+	Import-Module Lastpass -ArgumentList @{ ExportWriteCmdlets = $True }
 	```
 
 Planned:
