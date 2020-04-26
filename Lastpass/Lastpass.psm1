@@ -785,6 +785,9 @@ Function Set-Account {
 	.PARAMETER Notes
 	The notes tied to the account
 
+	.PARAMETER FormFields
+	The account form fields
+
 	.PARAMETER PasswordProtect
 	Whether to require a password reprompt to access the account
 
@@ -1421,6 +1424,8 @@ Function Set-Item {
 			$Body.username = $Credential.Username | ConvertTo-LPEncryptedString -Key $Key
 			$Body.password = $Credential.GetNetworkCredential().Password |
 				ConvertTo-LPEncryptedString -Key $Key
+			
+			# FIXME: This doesn't seem to work. Seems to match lastpass-cli code
 			If($FormFields){
 				$Body.data = ''
 				$Body.data += $FormFields | ForEach {
@@ -1440,7 +1445,7 @@ Function Set-Item {
 
 				}
 				$Body.data += "0`taction`t`taction`n0`tmethod`t`tmethod`n"
-				Write-Host $Body.Data
+				# Write-Host $Body.Data
 				$Body.data = ([Byte[]][Char[]] $Body.Data | ForEach { "{0:x2}" -f $_ }) -join ''
 				# Write-Host $Body.Data
 				$Body.save_all = '1'
@@ -1932,7 +1937,7 @@ Function ConvertTo-LPEncryptedString {
 			Return $Output
 		}
 		$Value | ForEach {
-			If(!$Value){ Return }
+			If(!$Value){ Return ''}
 			$AES.GenerateIV()
 			$Encryptor = $AES.CreateEncryptor()
 

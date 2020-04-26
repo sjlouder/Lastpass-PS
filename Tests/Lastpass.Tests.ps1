@@ -690,13 +690,14 @@ InModuleScope Lastpass {
 			$Result.Notes | Should -Be $Expected.Notes
 		}
 
-		It 'Decrypts and exposes the form fields as an ordered dictionary' {
+		It 'Decrypts and exposes the form fields' {
 			$Result = Get-Account 'Account2'
 			$Expected = $ExpectedAccounts | Where Name -eq 'Account2'
 			$Result.FormFields | Should -Not -BeNullOrEmpty
-			$Result.FormFields | Should -BeOfType Collections.Specialized.OrderedDictionary
+			$Result.FormFields | Should -BeOfType "PSCustomObject('Lastpass.FormField')"
 			$Expected.FormFields.Keys | ForEach {
-				$Result.FormFields[$_] | Should -Be $Expected.FormFields[$_] -Because $_
+				$FieldName = $_
+				$Result.FormFields[$_] | Should -Be $Expected.FormFields[$_] -Because $FieldName
 			}
 		}
 
