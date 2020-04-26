@@ -453,10 +453,13 @@ InModuleScope Lastpass {
 		}
 
 		$Expected = Get-Content $ScriptRoot/ParsedVault.json | ConvertFrom-Json
-		$Expected.Accounts | Where ID -eq '5148901049320353252' | ForEach {
+		$Expected.Accounts | Where  { $_.FormFields } | ForEach {
 			$_.FormFields | Where Type -in 'text','password' | ForEach {
 				$_.Value = $_.Value | ConvertTo-SecureString -AsPlainText -Force
 			}
+		}
+		$Expected.SecureNotes | Where { $_.AttachmentKey } | ForEach {
+			$_.AttachmentKey = $_.AttachmentKey | ConvertTo-SecureString -AsPlainText -Force
 		}
 
 
@@ -471,7 +474,7 @@ InModuleScope Lastpass {
 		}
 
 		It 'Parses the blob version from blob' {
-			$Blob.Version | Should -Be 118 #107
+			$Blob.Version | Should -Be $Expected.Version
 		}
 
 		It 'Parses the accounts' {
@@ -484,8 +487,16 @@ InModuleScope Lastpass {
 					Should -BeNullOrEmpty
 
 				$Account.Keys |
-					Where {$_ -notin 'PSTypeName', 'Username', 'Password', 'Notes', 'Credential', 'FormFields'} |
-					ForEach {
+					Where {
+						$_ -notin @(
+							'PSTypeName'
+							'Username'
+							'Password'
+							'Notes'
+							'Credential'
+							'FormFields'
+						)
+					} | ForEach {
 						If($Account.$_ -is [DateTime]){
 							#$Account.$_.DateTime | Should -Be ($Epoch.AddSeconds([Int]$Reference.$_).DateTime)
 						}Else{ $Account.$_ | Should -Be $Reference.$_ -Because $_}
@@ -494,12 +505,12 @@ InModuleScope Lastpass {
 		}
 		$Account = $Blob.Accounts | Where ID -eq '1835977081662683158'
 
-		It 'Transforms the last modification timestamp to a DateTime object' {
+		It 'Converts the last modification timestamp to a DateTime object' {
 			$Account.LastModifiedGMT | Should -BeOfType DateTime
 			$Account.LastModifiedGMT | Should -Be ([DateTime] '08/15/2019 4:42:38 AM')
 		}
 
-		It 'Transforms the last access timestamp as a DateTime object' {
+		It 'Converts the last access timestamp as a DateTime object' {
 			$Account.LastAccessed | Should -BeOfType DateTime
 			$Account.LastAccessed | Should -Be ([DateTime] '01/25/2019 3:09:08 AM')
 		}
@@ -513,7 +524,17 @@ InModuleScope Lastpass {
 				Compare-Object $Reference.PSObject.Properties $Note.PSObject.Properties -Property Name |
 					Should -BeNullOrEmpty
 
-				$Note.Keys | Where { $_ -notin 'Notes', 'PSTypeName' } | ForEach {
+				$Note.Keys | Where {
+					$_ -notin @(
+						'Notes'
+						'PSTypeName'
+						'AttachmentKey'
+						'Attachments'
+					)
+				} | ForEach {
+					$_ | Write-Host
+					$Note.$_ | Write-Host
+					$Reference.$_ | Write-Host
 					If($Note.$_ -is [DateTime]){
 						$Note.$_.DateTime | Should -Be ($Epoch.AddSeconds([Int]$Reference.$_).DateTime)
 					}Else{ $Note.$_ | Should -Be $Reference.$_ -Because $_ }
@@ -583,6 +604,25 @@ InModuleScope Lastpass {
 		It 'Converts the Secure form field values to a SecureString' {
 			$Blob.Accounts.FormFields | Where Type -in 'Text', 'Password' | ForEach {
 				$_.Value | Should -BeOfType SecureString
+			}
+		}
+
+		It 'Parses the secure note attachments' {
+			$Blob.SecureNotes | Where { $_.Attachments } | ForEach {
+				$Note = $_
+				$ExpectedNote = $Expected.SecureNotes | Where ID -eq $Note.ID
+				$Note.Attachments | ForEach {
+					$Attachment = $_
+					$Attachment | Should -Not -BeNullOrEmpty -Because $_.ID
+
+					$ExpectedAttachment = $ExpectedNote.Attachments | Where ID -eq $Attachment.ID
+					$Param = @{
+						ReferenceObject = $ExpectedAttachment.PSObject.Properties
+						DifferenceObject = $Attachment.PSObject.Properties
+						Property = 'Name', 'Value'
+					}
+					Compare-Object @Param | Should -BeNullOrEmpty
+				}
 			}
 		}
 
@@ -794,7 +834,14 @@ InModuleScope Lastpass {
 
 		BeforeAll {
 			$Script:Blob = Get-Content $ScriptRoot/ParsedVault.json | ConvertFrom-Json -AsHashtable
-			$Script:Blob.SecureNotes | ForEach { $_.Notes = ConvertTo-SecureString -A -F $_.Notes }
+			$Script:Blob.SecureNotes | ForEach {
+				$_.Notes = ConvertTo-SecureString -A -F $_.Notes
+				If($_.Attachments){
+					$_.Attachments | ForEach {
+						$_.FileName = $_.FileName | ConvertTo-SecureString -A -F
+					}
+				}
+			}
 			$Script:Blob.SharedFolders | ForEach { $_.Key = [Byte[]][Char[]] $_.Key }
 			$Script:PasswordPrompt = [DateTime]::Now
 			$Script:PasswordTimeout = New-TimeSpan -Minutes 2
@@ -813,11 +860,7 @@ InModuleScope Lastpass {
 
 		It 'Returns a list of all note IDs and names if no name is specified' {
 			$Result.Count | Should -Be 3
-			@(
-				@{ ID = '3365236279341564432'; Name = 'test' }
-				@{ ID = '8526543329769000462'; Name = 'Note In Folder' }
-				@{ ID = '5138672986418253689'; Name = 'Note Test' }
-			) | ForEach {
+			$ExpectedNotes | Select ID, Name | ForEach {
 				$Item = $_
 				$Result | Where {
 					$_.ID -eq $Item.ID -and
@@ -826,8 +869,8 @@ InModuleScope Lastpass {
 			}
 		}
 
-		$Expected = $ExpectedNotes | Where Name -eq 'test'
-		$Result = Get-Note 'test'
+		$Expected = $ExpectedNotes | Where Name -eq 'Attachment Test'
+		$Result = Get-Note 'Attachment Test'
 		$Now = [DateTime]::Now
 
 		It 'Returns a note by name' {
@@ -842,6 +885,20 @@ InModuleScope Lastpass {
 			$Result.Notes | Should -Be $Expected.Notes
 		}
 
+		It 'Decrypts the Attachment file names' {
+			$Result | Where { $_.Attachments } | ForEach {
+				$Note = $_
+				$ReferenceNote = $ExpectedNotes | Where ID -eq $Note.ID
+				$ReferenceNote | Should -Not -BeNullOrEmpty
+				$_.Attachments | ForEach {
+					$Attachment = $_
+					$ReferenceAttachment = $ReferenceNote.Attachments | Where ID -eq $Attachment.ID
+					$ReferenceAttachment | Should -Not -BeNullOrEmpty
+					$Attachment.FileName | Should -Be $ReferenceAttachment.FileName
+				}
+			}
+		}
+
 		It 'Updates the LastAccessed time' {
 			$Result.LastAccessed.DateTime | Should -Be $Now.DateTime
 		}
@@ -851,9 +908,9 @@ InModuleScope Lastpass {
 		$Expected = $ExpectedNotes | Where Name -eq 'Note In Folder'
 		It 'Prompts for password if note is password protected' {
 			($Script:Blob.SecureNotes |
-				Where Name -eq 'test').PasswordProtect = $True
+				Where Name -eq 'Attachment Test').PasswordProtect = $True
 			Mock Confirm-Password
-			Get-Note 'test'
+			Get-Note 'Attachment Test'
 
 			Assert-MockCalled Confirm-Password
 		}
@@ -1125,7 +1182,7 @@ InModuleScope Lastpass {
 				@{ Name = 'which'; 	 	Type = 'select-one';	Value = 'selected' }
 				@{ Name = 'remember';	Type = 'checkbox';		Checked = $True }
 				@{ Name = 'yes_or_no';	Type = 'radio';			Checked = $False }
-			) | ForEach { 
+			) | ForEach {
 				$_.PSTypeName = 'Lastpass.FormField'
 				[PSCustomObject] $_
 			}
