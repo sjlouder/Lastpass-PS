@@ -2034,7 +2034,6 @@ Function Confirm-Password {
 
 
 
-#FIXME! Remove; for debugging purposes only
 Function Get-Session {
 	<#
 	.SYNOPSIS
