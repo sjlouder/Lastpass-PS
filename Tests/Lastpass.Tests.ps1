@@ -453,6 +453,11 @@ InModuleScope Lastpass {
 		}
 
 		$Expected = Get-Content $ScriptRoot/ParsedVault.json | ConvertFrom-Json
+		$Expected.Accounts | Where ID -eq '5148901049320353252' | ForEach {
+			$_.FormFields | Where Type -in 'text','password' | ForEach {
+				$_.Value = $_.Value | ConvertTo-SecureString -AsPlainText -Force
+			}
+		}
 
 
 		Sync-Lastpass
@@ -466,10 +471,10 @@ InModuleScope Lastpass {
 		}
 
 		It 'Parses the blob version from blob' {
-			$Blob.Version | Should -Be 107
+			$Blob.Version | Should -Be 118 #107
 		}
 
-		It 'Parses and decrypts the accounts' {
+		It 'Parses the accounts' {
 			$Blob.Accounts.Length | Should -Be 5
 			$Expected.Accounts | ForEach {
 				$Reference = $_
@@ -479,10 +484,10 @@ InModuleScope Lastpass {
 					Should -BeNullOrEmpty
 
 				$Account.Keys |
-					Where {$_ -notin 'PSTypeName', 'Username', 'Password', 'Notes', 'Credential'} |
+					Where {$_ -notin 'PSTypeName', 'Username', 'Password', 'Notes', 'Credential', 'FormFields'} |
 					ForEach {
 						If($Account.$_ -is [DateTime]){
-							$Account.$_.DateTime | Should -Be ($Epoch.AddSeconds([Int]$Reference.$_).DateTime)
+							#$Account.$_.DateTime | Should -Be ($Epoch.AddSeconds([Int]$Reference.$_).DateTime)
 						}Else{ $Account.$_ | Should -Be $Reference.$_ -Because $_}
 					}
 			}
@@ -499,8 +504,8 @@ InModuleScope Lastpass {
 			$Account.LastAccessed | Should -Be ([DateTime] '01/25/2019 3:09:08 AM')
 		}
 
-		It 'Parses and decrypts the secure notes' {
-			$Blob.SecureNotes.Length | Should -Be 2
+		It 'Parses the secure notes' {
+			$Blob.SecureNotes.Length | Should -Be 3
 			$Expected.SecureNotes | ForEach {
 				$Reference = $_
 				$Note = ($Blob.SecureNotes | Where ID -eq $Reference.ID)
@@ -511,7 +516,7 @@ InModuleScope Lastpass {
 				$Note.Keys | Where { $_ -notin 'Notes', 'PSTypeName' } | ForEach {
 					If($Note.$_ -is [DateTime]){
 						$Note.$_.DateTime | Should -Be ($Epoch.AddSeconds([Int]$Reference.$_).DateTime)
-					}Else{ $Note.$_ | Should -Be $Reference.$_ }
+					}Else{ $Note.$_ | Should -Be $Reference.$_ -Because $_ }
 				}
 			}
 		}
@@ -536,6 +541,48 @@ InModuleScope Lastpass {
 						$Folder.$_.DateTime | Should -Be ($Epoch.AddSeconds([Int]$Reference.$_).DateTime)
 					}Else{ $Folder.$_ | Should -Be $Reference.$_ -Because $_ }
 				}
+			}
+		}
+
+		It 'Parses the account form fields' {
+			$Account = $Blob.Accounts | Where ID -eq '5148901049320353252'
+			$Account.FormFields | Should -Not -BeNullOrEmpty
+			$Account.FormFields | Should -BeOfType Collections.Specialized.OrderedDictionary
+
+			$ExpectedAccount = $Expected.Accounts | Where ID -eq $Account.ID
+			$ExpectedAccount.FormFields | ForEach {
+				$ExpectedField = $_
+				$Field = $Account.FormFields | Where Name -eq $_.Name
+				$Field | Should -Not -BeNullOrEmpty -Because $_.Name
+				'Name',
+				'Type',
+				'Checked' | ForEach {
+					$Field[$_] | Should -Be $ExpectedField.$_ -Because $_
+				}
+			}
+		}
+
+		It 'Decrypts the non-secure form field values' {
+			$Blob.Accounts | Where {$_.FormFields} | ForEach {
+				$Account = $_
+				$ExpectedAccount = $Expected.Accounts | Where ID -eq $Account.ID
+				$Account.FormFields | Where Type -eq 'Select-one' | ForEach {
+					$Field = $_
+					$ExpectedField = $ExpectedAccount.FormFields | Where Name -eq $Field.Name
+					$Field.Value | Should -Be $ExpectedField.Value
+				}
+				$Account.FormFields | Where Type -eq 'checkbox' | ForEach {
+					$Field = $_
+					$ExpectedField = $ExpectedAccount.FormFields | Where Name -eq $Field.Name
+					$Field.Checked | Should -Be $ExpectedField.Checked
+				}
+
+			}
+		}
+
+		It 'Converts the Secure form field values to a SecureString' {
+			$Blob.Accounts.FormFields | Where Type -in 'Text', 'Password' | ForEach {
+				$_.Value | Should -BeOfType SecureString
 			}
 		}
 
@@ -580,6 +627,11 @@ InModuleScope Lastpass {
 				$Account = $_
 				'Username','Password','Notes' | ForEach {
 					If($Account[$_]){$Account[$_] = ConvertTo-SecureString -A -F $Account[$_]}
+				}
+				If($_.FormFields){
+					$_.FormFields |
+						Where Type -match 'email|tel|text|password|textarea' |
+						ForEach { $_.Value = $_.Value | ConvertTo-SecureString -A -F }
 				}
 			}
 			$Script:PasswordPrompt = [DateTime]::Now
@@ -638,12 +690,24 @@ InModuleScope Lastpass {
 			$Result.Notes | Should -Be $Expected.Notes
 		}
 
+		It 'Decrypts and exposes the form fields' {
+			$Result = Get-Account 'Account2'
+			$Expected = $ExpectedAccounts | Where Name -eq 'Account2'
+			$Result.FormFields | Should -Not -BeNullOrEmpty
+			$Result.FormFields | Should -BeOfType "PSCustomObject('Lastpass.FormField')"
+			$Expected.FormFields.Keys | ForEach {
+				$FieldName = $_
+				$Result.FormFields[$_] | Should -Be $Expected.FormFields[$_] -Because $FieldName
+			}
+		}
+
 		It 'Updates the LastAccessed time' {
 			$Result.LastAccessed.DateTime | Should -Be $Now.DateTime
 		}
 
 		It 'Accepts pipeline input' {
 			$Result = 'Account1' | Get-Account
+			$Result | Should -BeOfType "PSCustomObject('Lastpass.Account')"
 			$Result.ID | Should -Be 1835977081662683158
 		}
 
@@ -662,7 +726,6 @@ InModuleScope Lastpass {
 			$Result.Credential.Username | Should -Be $Expected.Username
 			$Result.Credential.GetNetworkCredential().Password | Should -Be $Expected.Password
 		}
-
 	}
 
 	Describe Set-Account {
@@ -725,8 +788,6 @@ InModuleScope Lastpass {
 				!$DisableAutofill
 			}
 		}
-
-
 	}
 
 	Describe Get-Note {
@@ -751,18 +812,18 @@ InModuleScope Lastpass {
 		$Result = Get-Note
 
 		It 'Returns a list of all note IDs and names if no name is specified' {
-			$Result.Count | Should -Be 2
+			$Result.Count | Should -Be 3
 			@(
 				@{ ID = '3365236279341564432'; Name = 'test' }
 				@{ ID = '8526543329769000462'; Name = 'Note In Folder' }
+				@{ ID = '5138672986418253689'; Name = 'Note Test' }
 			) | ForEach {
 				$Item = $_
 				$Result | Where {
 					$_.ID -eq $Item.ID -and
 					$_.Name -eq $Item.Name
-				} | Should -Not -BeNullOrEmpty
+				} | Should -Not -BeNullOrEmpty -Because $Item.Name
 			}
-
 		}
 
 		$Expected = $ExpectedNotes | Where Name -eq 'test'
@@ -797,15 +858,16 @@ InModuleScope Lastpass {
 			Assert-MockCalled Confirm-Password
 		}
 
-		It 'Parses custom note properties and exposes them as properties' {
-			'NoteType',
+		It 'Parses custom note properties and exposes them as an ordered hashtable' {
+			$Result.Notes | Should -Not -BeNullOrEmpty
+			$Result.Notes | Should -BeOfType Collections.Specialized.OrderedDictionary
+			$Result.NoteType | Should -Be $Expected.NoteType
+
 			'Hostname',
 			'Username',
 			'Password',
 			'Notes' | ForEach {
-				If($Expected.$_){
-					$Result.Notes.$_ | Should -Be $Expected.$_
-				}
+				$Result.Notes.$_ | Should -Be $Expected.Notes.$_ -Because $_
 			}
 
 		}
@@ -1050,6 +1112,39 @@ InModuleScope Lastpass {
 		It 'Encodes the URL' {
 			Assert-MockCalled Invoke-RestMethod -ParameterFilter {
 				$Body.URL -eq '687474703a2f2f75726c2e636f6d'
+			}
+		}
+		#TODO: Refactor FormFields to be PSCustomObject instead of dict
+		It 'Encodes the form fields' {
+			$FormFields = @(
+				@{ Name = 'email';		Type = 'email'; 		Value = 'email@address.com' }
+				@{ Name = 'phone';		Type = 'tel'; 			Value = '1234567890' }
+				@{ Name = 'username';	Type = 'text'; 			Value = 'test' }
+				@{ Name = 'password';	Type = 'password'; 		Value = 'hardtoguess' }
+				@{ Name = 'feedback';	Type = 'textarea'; 		Value = 'lots of text here' }
+				@{ Name = 'which'; 	 	Type = 'select-one';	Value = 'selected' }
+				@{ Name = 'remember';	Type = 'checkbox';		Checked = $True }
+				@{ Name = 'yes_or_no';	Type = 'radio';			Checked = $False }
+			) | ForEach { 
+				$_.PSTypeName = 'Lastpass.FormField'
+				[PSCustomObject] $_
+			}
+
+			$Account | Set-Item -FormFields $FormFields
+			Assert-MockCalled Invoke-RestMethod -Scope It -ParameterFilter {
+				$FormString = (([Char[]] ($Body.Data | ConvertFrom-Hex)) -join '') -split "`n"
+				# $FormString | Write-Host
+				$URI -eq 'https://lastpass.com/show_website.php' -and
+				$FormString[0] -match "0`temail`temail`t" -and
+				$FormString[1] -match "0`tphone`ttel`t" -and
+				$FormString[2] -match "0`tusername`ttext`t" -and
+				$FormString[3] -match "0`tpassword`tpassword`t" -and
+				$FormString[4] -match "0`tfeedback`ttextarea`t" -and
+				$FormString[5] -match "0`twhich`tselect-one`tselected" -and
+				$FormString[6] -match "0`tremember`tcheckbox`t-1" -and
+				$FormString[7] -match "0`tyes_or_no`tradio`t-0" -and
+				$FormString[8] -match "0`taction`t`taction" -and
+				$FormString[9] -match "0`tmethod`t`tmethod"
 			}
 		}
 

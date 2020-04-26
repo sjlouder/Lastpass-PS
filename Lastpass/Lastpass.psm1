@@ -1,5 +1,5 @@
 # Lastpass Powershell Module
-# Copyright (C) 2019 Steven Loudermilk
+# Copyright (C) 2020 Steven Loudermilk
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -162,6 +162,20 @@ $Script:Schema = @{
 		DefaultFields = @(
 			'Name'
 			'ReadOnly'
+		)
+	}
+	FormFields = @{
+		Fields = [Ordered] @{
+			Name = 'String'
+			Type = 'String'
+			Value = 'Other'
+			Checked = 'Boolean'
+		}
+		DefaultFields = @(
+			'Name'
+			'Type'
+			'Value'
+			'Checked'
 		)
 	}
 }
@@ -332,7 +346,7 @@ Function Connect-Lastpass {
 			# Parse custombutton and customaction attributes
 			Default { Throw $Response.Error.Message }
 		}
-}
+	}
 	$Response.OK | Out-String | Write-Debug
 	If(!$Response.OK){ Throw 'Login unsuccessful' }
 
@@ -481,11 +495,10 @@ Function Sync-Lastpass {
 	$Response = Invoke-RestMethod @Param
 
 	If($Response.Error){ Throw $Response.Error.Cause }
-	$Response = [Byte[]][Char[]] $Response
-	#If($PSBoundParameters.Debug){ Return $Response }
+	If($PSBoundParameters.Debug){ Return $Response }
 	#"Response:`n{0}" -f $Response | Write-Debug
-	#$Response = ([char[]][Convert]::FromBase64String($Response)) -join ''
-	$Script:LastSyncTime = Get-Date
+	# Return ([char[]][Convert]::FromBase64String($Response)) -join ''
+	$Response = [Byte[]][Char[]] $Response
 
 	#TODO: Cleanup debug output.
 	#	Wrap parse in try/catch and provide info in catch error
@@ -577,6 +590,34 @@ Function Sync-Lastpass {
 
 				Write-Debug "END ACCOUNT DECODE"
 			}
+			{$_ -in 'ACFL','ACOF'} {
+				Write-Debug 'BEGIN FORMFIELD DECODE'
+				If(!$Blob.Accounts[-1]){ Write-Error 'Parse failed. Unable to find account for form fields' }
+				If(!$Blob.Accounts[-1].FormFields){ $Blob.Accounts[-1].FormFields = @() }
+				$FormField = [Ordered] @{}
+
+				$Schema.FormFields.Fields.Keys | ForEach {
+					Write-Debug "Field: $_"
+					$Item = Read-Item -Blob $Data -Index $ItemIndex -Debug:$False
+					'Returned length: {0}' -f $Item.Length | Write-Debug
+					$ItemIndex += $Item.length + 4
+
+					$FormField[$_] = Switch($Schema.FormFields.Fields[$_]){
+						Boolean { !!([Int] ([Char[]] $Item -join '')) }
+						String { If($Item){[Char[]] $Item -join ''} }
+						Default { $Item }
+					}
+					Write-Debug "End Field $_"
+				}  
+				Switch -Regex ($FormField.Type){
+					'email|tel|text|password|textarea' {
+						$FormField.Value = ConvertTo-LPEncryptedString @Param -Bytes $FormField.Value
+					}
+					Default { $FormField.Value = [Char[]] $FormField.Value -join '' }
+				}
+				$Blob.Accounts[-1].FormFields += $FormField
+				Write-Debug 'END FORMFIELD DECODE'
+			}
 			SHAR {
 				Write-Debug "BEGIN SHARE DECODE"
 				$Folder = @{ PSTypeName = 'Lastpass.SharedFolder' }
@@ -621,7 +662,7 @@ Function Sync-Lastpass {
 		}
 	}
 
-
+	$Script:LastSyncTime = Get-Date
 	$Script:Blob = [PSCustomObject] $Script:Blob
 	If($PSBoundParameters.Debug){ Write-Output $Script:Blob }
 
@@ -674,13 +715,31 @@ Function Get-Account {
 				}
 
 				$_.GetEnumerator() | ForEach {
-					If($_.Value -isnot [SecureString]){
-						$Account[$_.Key] = $_.Value
+					If($_.Key -eq 'FormFields'){
+						$Account.FormFields = @()
+						$_.Value | ForEach {
+							$_ | Out-String | Write-Debug
+							Write-Debug "FormField: $($_.Name)"
+							$_.Value | Out-String | Write-Debug
+							$Field = @{
+								PSTypeName = 'Lastpass.FormField'
+								Name = $_.Name
+								Type = $_.Type
+								Value = $_.Value
+								Checked = $_.Checked
+							}
+							If($_.Value -is [SecureString]){
+								$Param.SecureString = $_.Value
+								$Field.Value = ConvertFrom-LPEncryptedData @Param
+							}
+							$Account.FormFields += [PSCustomObject] $Field
+						}
 					}
-					Else{
+					ElseIf($_.Value -is [SecureString]){
 						$Param.SecureString = $_.Value
 						$Account[$_.Key] = ConvertFrom-LPEncryptedData @Param
 					}
+					Else{ $Account[$_.Key] = $_.Value }
 				}
 
 				$Credential = @{ Username = $Account.Username }
@@ -725,6 +784,9 @@ Function Set-Account {
 
 	.PARAMETER Notes
 	The notes tied to the account
+
+	.PARAMETER FormFields
+	The account form fields
 
 	.PARAMETER PasswordProtect
 	Whether to require a password reprompt to access the account
@@ -772,6 +834,9 @@ Function Set-Account {
 		[String] $Notes,
 
 		[Parameter(ValueFromPipelineByPropertyName)]
+		[PSTypeName('Lastpass.FormField')] $FormFields,
+
+		[Parameter(ValueFromPipelineByPropertyName)]
 		[Switch] $PasswordProtect,
 
 		[Parameter(ValueFromPipelineByPropertyName)]
@@ -785,6 +850,7 @@ Function Set-Account {
 	)
 
 	"Set-Account called with parameters:`n{0}" -f ($PSBoundParameters | Out-String) | Write-Debug
+	If($FormFields){ Throw 'Updating accounts with form fields not supported currently' }
 
 	$Param = @{
 		ID				= $Account.ID
@@ -793,6 +859,7 @@ Function Set-Account {
 		URL				= $URL
 		Credential		= $Credential
 		Notes			= $Notes
+		FormFields		= $FormFields
 		PasswordProtect	= $PasswordProtect
 		Favorite		= $Favorite
 		AutoLogin		= $AutoLogin
@@ -803,7 +870,6 @@ Function Set-Account {
 
 	"Calling Set-Item with parameters:`n{0}" -f ($Param | Out-String) | Write-Debug
 	Set-Item @Param
-
 }
 
 
@@ -888,6 +954,7 @@ Function Get-Note {
 		}
 	}
 }
+
 
 
 Function Set-Note {
@@ -1253,6 +1320,9 @@ Function Set-Item {
 		[String] $Notes,
 
 		[Parameter(ValueFromPipelineByPropertyName)]
+		[PSTypeName('Lastpass.FormField')] $FormFields,
+
+		[Parameter(ValueFromPipelineByPropertyName)]
 		[Switch] $PasswordProtect,
 
 		[Parameter(ValueFromPipelineByPropertyName)]
@@ -1315,7 +1385,6 @@ Function Set-Item {
 		# 			sharedfolderid = $Account > Share.ID
 		# save blob
 
-
 		If($ShareID){
 			If(($Blob.SharedFolders | Where ID -eq $ShareID).ReadOnly){
 				$Type = If($SecureNote){ 'Note' }Else{ 'Account' }
@@ -1326,7 +1395,10 @@ Function Set-Item {
 			$Key = $Blob.SharedFolders | Where ID -eq $ShareID | Select -Expand Key
 		}
 
-		If($SecureNote){ $URL = 'http://sn' }
+		If($SecureNote){
+			$URL = 'http://sn'
+			$VerboseDescription = "secure note '$Name'"
+		}
 		$Body += @{
 			aid		 = $ID
 			name	 = $Name | ConvertTo-LPEncryptedString -Key $Key
@@ -1352,18 +1424,38 @@ Function Set-Item {
 			$Body.username = $Credential.Username | ConvertTo-LPEncryptedString -Key $Key
 			$Body.password = $Credential.GetNetworkCredential().Password |
 				ConvertTo-LPEncryptedString -Key $Key
+			
+			# FIXME: This doesn't seem to work. Seems to match lastpass-cli code
+			If($FormFields){
+				$Body.data = ''
+				$Body.data += $FormFields | ForEach {
+					$Field = $_
+					# $Field.Value.FieldType | Out-String | Write-Host
+					$Value = Switch -Regex ($Field.Type){
+						'email|tel|text|password|textarea' { $Field.Value | ConvertTo-LPEncryptedString -Key $Key }
+						'checkbox|radio' { '{0}-{1}' -f $Field.Value, [Int] $Field.Checked }
+						Default { $Field.Value }
+					}
+
+					"0`t{0}`t{1}`t{2}`n" -f @(
+						[URI]::EscapeDataString($Field.Name)
+						[URI]::EscapeDataString($Field.Type)
+						[URI]::EscapeDataString($Value)
+					)
+
+				}
+				$Body.data += "0`taction`t`taction`n0`tmethod`t`tmethod`n"
+				# Write-Host $Body.Data
+				$Body.data = ([Byte[]][Char[]] $Body.Data | ForEach { "{0:x2}" -f $_ }) -join ''
+				# Write-Host $Body.Data
+				$Body.save_all = '1'
+			}
 			If($AutoLogin){ $Body.autologin = 'on' }
 			If($DisableAutofill){ $Body.never_autofill = 'on' }
+			$VerboseDescription = "account '$Name'"
 		}
 
 		"Request Parameters:`n{0}" -f ($Body | Out-String) | Write-Debug
-		$VerboseDescription = '{0} "{1}"' -f '{0}', $Name
-		If($SecureNote){
-			$VerboseDescription = $VerboseDescription -f 'secure note'
-		}
-		Else{
-			$VerboseDescription = $VerboseDescription -f 'account'
-		}
 		$Query = "WARNING: update support is currently experimental`n" +
 			"DATA LOSS MAY OCCUR (especially if item has form fields or attachments)`n" +
 			"Update $VerboseDescription" -f $Name
@@ -1390,7 +1482,7 @@ Function Set-Item {
 		}
 	}
 
-	END { Sync-Lastpass }
+	END { Sync-Lastpass -Debug:$False }
 }
 
 
@@ -1845,6 +1937,7 @@ Function ConvertTo-LPEncryptedString {
 			Return $Output
 		}
 		$Value | ForEach {
+			If(!$Value){ Return ''}
 			$AES.GenerateIV()
 			$Encryptor = $AES.CreateEncryptor()
 
@@ -1941,7 +2034,6 @@ Function Confirm-Password {
 
 
 
-#FIXME! Remove; for debugging purposes only
 Function Get-Session {
 	<#
 	.SYNOPSIS
@@ -2020,10 +2112,6 @@ If($ModuleParameters.ExportWriteCmdlets){
 }
 
 If($ModuleParameters.Debug){
-	$ExportMethods += @(
-		'Get-Session'
-		'Set-Session'
-	)
-}
-
+	$ExportMethods = '*'
+}	
 Export-ModuleMember -Function $ExportMethods
