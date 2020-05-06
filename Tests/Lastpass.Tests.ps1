@@ -1,10 +1,12 @@
-Import-Module -Force $PSScriptRoot/../Lastpass -ArgumentList @{ ExportWriteCmdlets = $True } -Verbose:$False
+Import-Module -Force $PSScriptRoot/../Lastpass -ArgumentList @{ Debug = $True } -Verbose:$False
 
 InModuleScope Lastpass {
 
 	$ScriptRoot = $PSScriptRoot
 	$IsInteractive = $Script:Interactive
 
+	$Script:ParsedVault = Get-Content $ScriptRoot/ParsedVault.json | ConvertFrom-JSON -AsHashtable
+	$Script:DecryptedVault = Get-Content $ScriptRoot/DecryptedVault.json | ConvertFrom-JSON -AsHashtable
 
 	# Make sure no tests actually reach out to the internet
 	Mock Invoke-RestMethod
@@ -532,9 +534,6 @@ InModuleScope Lastpass {
 						'Attachments'
 					)
 				} | ForEach {
-					$_ | Write-Host
-					$Note.$_ | Write-Host
-					$Reference.$_ | Write-Host
 					If($Note.$_ -is [DateTime]){
 						$Note.$_.DateTime | Should -Be ($Epoch.AddSeconds([Int]$Reference.$_).DateTime)
 					}Else{ $Note.$_ | Should -Be $Reference.$_ -Because $_ }
@@ -985,6 +984,110 @@ InModuleScope Lastpass {
 				$Notes -eq "Name:Note`nNoteType:Test`nIP:127.0.0.1`n"
 			}
 		}
+	}
+
+	Describe Get-Attachment {
+
+		Mock Get-Note {
+			$Note = $DecryptedVault.SecureNotes | Where ID -eq 3365236279341564432
+			If($Note.AttachmentKey -is 'String'){
+				$Note.AttachmentKey = $Note.AttachmentKey | ConvertFrom-Hex
+			}
+			$Note.ShareID = 2321
+			$Note
+		}
+		Mock Invoke-RestMethod { Get-Content $ScriptRoot/Attachment }
+		Mock Read-Host {''}
+
+		$AttachmentMetadata = $DecryptedVault.SecureNotes.Attachments |
+			Where ID -eq 3365236279341564432-48085
+		$AttachmentMetadata = [PSCustomObject] @{
+			PSTypeName	= 'Lastpass.Attachment'
+			ID			= $AttachmentMetadata.ID
+			MIMEType	= $AttachmentMetadata.MIMEType
+			StorageKey	= $AttachmentMetadata.StorageKey
+			Size		= $AttachmentMetadata.Size
+			FileName	= $AttachmentMetadata.FileName
+		}
+
+		$R = $AttachmentMetadata | Get-Attachment -FilePath TestDrive:/Attachment.txt
+
+		It 'Appends the share ID if the note is shared' {
+			Assert-MockCalled Invoke-RestMethod -ParameterFilter {
+				$URI -eq 'https://lastpass.com/getattach.php' -and
+				$Body.sharedfolderid -eq '2321'
+			}
+		}
+
+		It 'Downloads the attachment from Lastpass server' {
+			Assert-MockCalled Invoke-RestMethod -ParameterFilter {
+				$URI -eq 'https://lastpass.com/getattach.php' -and
+				$Body.GetAttach -eq '100000048085'
+			}
+		}
+
+		It 'Appends the attachment filename if the specified path is a folder' {
+			$R = $AttachmentMetadata | Get-Attachment -FilePath TestDrive:/
+			$R.FullName | Should -Be ('{0}LPTestFile.txt' -f (Convert-Path TestDrive:/))
+		}
+
+		It 'Returns the file object' {
+			$R | Should -Not -BeNullOrEmpty
+			$R | Should -BeOfType 'System.IO.FileInfo'
+		}
+
+		It 'Saves the file to the specified Path' {
+			$R | Should -Exist
+		}
+
+		It 'Decrypts the attachment' {
+			$Reference = Get-Item $ScriptRoot/DecryptedAttachment.txt
+			$ReferenceHash = $Reference | Get-FileHash
+			($R | Get-FileHash).Hash | Should -Be $ReferenceHash.Hash
+		}
+
+		New-Item -Force TestDrive:/Attachment.txt
+		$R = $AttachmentMetadata | Get-Attachment -FilePath TestDrive:/Attachment.txt
+
+		It 'Prompts the user to overwrite an existing file' {
+			Assert-MockCalled Read-Host
+		}
+
+		It 'Returns if the user chooses not to overwrite the file' {
+			$R | Should -BeNullOrEmpty
+		}
+
+		It 'Does not prompt if -Force is specified' {
+			$R = $AttachmentMetadata | Get-Attachment -FilePath TestDrive:/Attachment.txt -Force
+			Assert-MockCalled Read-Host -Exactly -Times 0 -Scope It
+			$R | Should -Not -BeNullOrEmpty
+			$R | Should -BeOfType 'System.IO.FileInfo'
+		}
+
+		Mock ConvertFrom-LPEncryptedData { Throw 'error' }
+		It 'Throws if an error occurs during attachment decryption' {
+			{ $AttachmentMetadata | Get-Attachment -FilePath TestDrive:\Attachment.txt } |
+				Should -Throw 'Failed to decrypt attachment'
+		}
+
+		Mock Invoke-RestMethod { Throw 'Invalid request' }
+		It 'Throws if an error occurs during attachment download' {
+			{ $AttachmentMetadata | Get-Attachment -FilePath TestDrive:\Attachment.txt } |
+				Should -Throw 'Failed to download attachment from Lastpass server'
+		}
+
+		Mock Get-Note {
+			[PSCustomObject] @{
+				ID = 3365236279341564432
+				Name = 'Missing AttachmentKey'
+				ShareID = 2321
+			}
+		}
+		It 'Throws if it is unable to find the attachment key' {
+			{ $AttachmentMetadata | Get-Attachment -FilePath TestDrive:\Attachment.txt } |
+				Should -Throw 'Unable to find attachment key'
+		}
+
 	}
 
 	Describe New-Password {
