@@ -69,8 +69,8 @@ $Script:Schema = @{
 			Action = 'Skip'
 			GroupID = 'String' #?
 			Deleted = 'Boolean' #?
-			EncryptedAttachmentKey = 'String'#'Encrypted'
-			AttachmentPresent = 'String'
+			AttachmentKey = 'String'
+			AttachmentPresent = 'Boolean'
 			IndividualShare = 'Boolean' #?
 			NoteType = 'String' #?
 			NoAlert = 'String' #?
@@ -95,7 +95,7 @@ $Script:Schema = @{
 			'NoteType'
 			'Notes'
 			'AttachmentPresent'
-			'EncryptedAttachmentKey'
+			'AttachmentKey'
 			'PasswordProtect'
 			'Favorite'
 			'Deleted'
@@ -164,7 +164,7 @@ $Script:Schema = @{
 			'ReadOnly'
 		)
 	}
-	FormFields = @{
+	FormField = @{
 		Fields = [Ordered] @{
 			Name = 'String'
 			Type = 'String'
@@ -176,6 +176,21 @@ $Script:Schema = @{
 			'Type'
 			'Value'
 			'Checked'
+		)
+	}
+	Attachment = @{
+		Fields = [Ordered] @{
+			ID = 'String'
+			Parent = 'String'
+			MIMEType = 'String'
+			StorageKey = 'String'
+			Size = 'String'
+			FileName = 'Encrypted'
+		}
+		DefaultFields = @(
+			'FileName'
+			'MIMEType'
+			'Size'
 		)
 	}
 }
@@ -351,13 +366,13 @@ Function Connect-Lastpass {
 	If(!$Response.OK){ Throw 'Login unsuccessful' }
 
 	$Script:Session = [PSCustomObject] @{
-		UID					= $Response.OK.UID
-		SessionID			= $Response.OK.SessionID
-		Token				= $Response.OK.Token
-		PrivateKey			= [RSAParameters]::New()
-		Iterations			= $Response.OK.Iterations
-		Username			= $Response.OK.LPUsername
-		Key					= $Key
+		UID			= $Response.OK.UID
+		SessionID	= $Response.OK.SessionID
+		Token		= $Response.OK.Token
+		PrivateKey	= [RSAParameters]::New()
+		Iterations	= $Response.OK.Iterations
+		Username	= $Response.OK.LPUsername
+		Key			= $Key
 	}
 
 	If($Response.OK.PrivateKeyEnc){
@@ -557,7 +572,7 @@ Function Sync-Lastpass {
 					Write-Debug "End Field $_"
 				}
 
-				If($Account.Folder -eq '(none)'){ $Account.Folder = $Null }
+				If($Account.Folder -in '(none)', ''){ $Account.Folder = $Null }
 
 				If($Blob.SharedFolders[-1]){
 					If($Account.Folder){
@@ -573,6 +588,12 @@ Function Sync-Lastpass {
 						$Account.Keys.Where({$_ -notin $Schema.SecureNote.Fields }) |
 							ForEach { $Account.Remove($_) }
 						$Account.PSTypeName = 'Lastpass.SecureNote'
+						If($Account.AttachmentPresent){
+
+							$Account.AttachmentKey = ConvertTo-LPEncryptedString @Param -Bytes (
+								[Byte[]] [Char[]] $Account.AttachmentKey
+							)
+						}
 						$Blob.SecureNotes += $Account
 					}
 					'http://group' {
@@ -596,19 +617,19 @@ Function Sync-Lastpass {
 				If(!$Blob.Accounts[-1].FormFields){ $Blob.Accounts[-1].FormFields = @() }
 				$FormField = [Ordered] @{}
 
-				$Schema.FormFields.Fields.Keys | ForEach {
+				$Schema.FormField.Fields.Keys | ForEach {
 					Write-Debug "Field: $_"
 					$Item = Read-Item -Blob $Data -Index $ItemIndex -Debug:$False
 					'Returned length: {0}' -f $Item.Length | Write-Debug
 					$ItemIndex += $Item.length + 4
 
-					$FormField[$_] = Switch($Schema.FormFields.Fields[$_]){
+					$FormField[$_] = Switch($Schema.FormField.Fields[$_]){
 						Boolean { !!([Int] ([Char[]] $Item -join '')) }
 						String { If($Item){[Char[]] $Item -join ''} }
 						Default { $Item }
 					}
 					Write-Debug "End Field $_"
-				}  
+				}
 				Switch -Regex ($FormField.Type){
 					'email|tel|text|password|textarea' {
 						$FormField.Value = ConvertTo-LPEncryptedString @Param -Bytes $FormField.Value
@@ -617,6 +638,35 @@ Function Sync-Lastpass {
 				}
 				$Blob.Accounts[-1].FormFields += $FormField
 				Write-Debug 'END FORMFIELD DECODE'
+			}
+			ATTA {
+				Write-Debug 'BEGIN ATTACHMENT DECODE'
+
+				$Attachment = @{ PSTypeName = 'Lastpass.Attachment' }
+				$Schema.Attachment.Fields.Keys | ForEach {
+					Write-Debug "Field: $_"
+
+					$Item = Read-Item -Blob $Data -Index $ItemIndex -Debug:$False
+					'Returned length: {0}' -f $Item.Length | Write-Debug
+					$ItemIndex += $Item.length + 4
+					$Attachment[$_] = Switch($Schema.Attachment.Fields[$_]){
+						Encrypted { ConvertTo-LPEncryptedString @Param -Bytes $Item }
+						String { If($Item){[Char[]] $Item -join ''} }
+					}
+
+					Write-Debug "End Field: $_"
+				}
+				$SecureNote = $Blob.SecureNotes | Where ID -eq $Attachment.Parent
+				If(!$SecureNote){
+					"Unable to find Secure Note for attachment {0}`n{1}" -f @(
+						$Attachment.ID
+						$Attachment | Out-String
+					) | Write-Warning
+				}
+				If(!$SecureNote.Attachments){ $SecureNote.Attachments = @() }
+				$SecureNote.Attachments += $Attachment
+
+				Write-Debug 'END ATTACHMENT DECODE'
 			}
 			SHAR {
 				Write-Debug "BEGIN SHARE DECODE"
@@ -920,15 +970,30 @@ Function Get-Note {
 						Where ID -eq $_.ShareID |
 						ForEach Key
 				}
-
-				$_.GetEnumerator() | ForEach {
-					If($_.Value -isnot [SecureString]){
-						$Note[$_.Key] = $_.Value
+				If($_.AttachmentKey){
+					$AttachmentKey = $_.AttachmentKey |
+						ConvertFrom-LPEncryptedData @Param -Base64 |
+						ConvertFrom-Hex
+				}
+				$_.GetEnumerator() | Where Key -ne 'AttachmentKey' | ForEach {
+					'Key: {0}' -f $_.Key | Write-Debug
+					If($_.Key -eq 'Attachments'){
+						$Note.Attachments = $_.Value | ForEach {
+							[PSCustomObject] @{
+								PStypeName = 'Lastpass.Attachment'
+								ID = $_.ID
+								MIMEType = $_.MIMEType
+								StorageKey = $_.StorageKey
+								Size = $_.Size
+								FileName = $_.FileName |
+									ConvertFrom-LPEncryptedData -Key $AttachmentKey -Base64
+							}
+						}
 					}
-					Else{
-						$Param.SecureString = $_.Value
-						$Note[$_.Key] = ConvertFrom-LPEncryptedData @Param
+					ElseIf($_.Value -is [SecureString]){
+						$Note[$_.Key] = $_.Value | ConvertFrom-LPEncryptedData @Param
 					}
+					Else{ $Note[$_.Key] = $_.Value }
 				}
 
 				If(
@@ -1039,6 +1104,102 @@ Function Set-Note {
 
 }
 
+
+Function Get-Attachment {
+	<#
+	.SYNOPSIS
+	Gets a Secure Note attachment
+
+	.DESCRIPTION
+	Long description
+
+	.PARAMETER Attachment
+	The attachment metadata object
+
+	.PARAMETER FilePath
+	The path to save the attachment to.
+	If the specified path is a directory, the attachment
+	filename will be appended to the path automatically
+
+	.PARAMETER Force
+	If specified, the function will overwrite an existing file at the specified path
+	By default if a file exists at the specified path, a confirmation prompt to overwrite is shown
+
+	.EXAMPLE
+	$Note = Get-Note 'AttachmentNote'
+	Get-Attachment $Note.Attachments[0] $env:HOME/Downloads/secretfile.txt
+
+	Downloads the first attachment of the 'AttachmentNote' secure note
+	and saves it to the Downloads folder in the user's home directory with the name 'secretfile.txt'
+	If a file already exists at that path, the function will prompt whether to overwrite
+
+	.EXAMPLE
+	New-Item -ItemType Directory Attachments -Force
+	$Note = Get-Note 'AttachmentNote'
+	$Note.Attachments | Get-Attachment -FilePath ./Attachments -Force
+
+	Downloads all of the attachments of the 'AttachmentNote' secure note
+	to the Attachments directory in the current directory.
+	Each attachment is saved with it's respective original filename in Lastpass
+	Any existing files are overwritten without confirmation
+	#>
+
+	[CmdletBinding()]
+	Param(
+		[Parameter(ValueFromPipeline)]
+		[Alias('AttachmentMetadata')]
+		[PSTypeName('Lastpass.Attachment')] $Attachment,
+
+		[Parameter(Mandatory)]
+		[ValidateScript({ Test-Path -IsValid $_ })]
+		[String] $FilePath,
+
+		[Switch] $Force
+	)
+
+	$NoteID = $Attachment.ID -split '-' | Select -First 1
+	$Note = Get-Note | Where ID -eq $NoteID | Get-Note
+	If(!$Note.AttachmentKey){ Throw 'Unable to find attachment key' }
+	$Param = @{
+		URI = 'https://lastpass.com/getattach.php'
+		WebSession = $WebSession
+		Method = 'Post'
+		Body = @{
+			token = $Session.Token
+			getattach = $Attachment.StorageKey
+		}
+	}
+
+	If($Note.ShareID){ $Param.Body.sharedfolderid = $Note.ShareID }
+
+	Try{ $Content = Invoke-RestMethod @Param }
+	Catch{ Throw "Failed to download attachment from Lastpass server`n{0}" -f $_ }
+
+	# May need to unescape backslashes in response
+	Try{
+		$Content = $Content | ConvertFrom-LPEncryptedData -Base64 -Key $Note.AttachmentKey
+		$Content = [Convert]::FromBase64String($Content)
+	}
+	Catch{ Throw "Failed to decrypt attachment`n{0}" -f $_ }
+
+
+	If(Test-Path -PathType Container $FilePath){
+		$FilePath = Join-Path $FilePath $Attachment.FileName
+	}
+
+	If(!$Force -and (Test-Path $FilePath)){
+		Do{
+			Switch(Read-Host ('Overwrite File {0}? (y/N)' -f $FilePath)){
+				Y { $Break = $True }
+				N { Return }
+				'' { Return }
+			}
+		}While(!$Break)
+	}
+
+	Set-Content -Path $FilePath -Value $Content -AsByteStream
+	Get-Item $FilePath | Write-Output
+}
 
 
 Function New-Password {
@@ -1232,18 +1393,21 @@ Function Set-Item {
 	.PARAMETER Folder
 	The directory path that contains the item
 
+	.PARAMETER ShareID
+	The ID of the share that contains the item
+
 	.PARAMETER URL
 	The URL of the item,
 	If secure note, this is set to 'http://sn'
 
-	.PARAMETER Username
+	.PARAMETER Credential
 	The username of the account
 
-	.PARAMETER Password
-	The password of the account
-
 	.PARAMETER Notes
-	The notes tied to the item
+	The item's notes
+
+	.PARAMETER FormFields
+	The item's formfields
 
 	.PARAMETER PasswordProtect
 	Whether to require a password reprompt to access the item
@@ -1319,7 +1483,10 @@ Function Set-Item {
 		[Alias('Content','Extra')]
 		[String] $Notes,
 
-		[Parameter(ValueFromPipelineByPropertyName)]
+		[Parameter(
+			ParameterSetName='Account',
+			ValueFromPipelineByPropertyName
+		)]
 		[PSTypeName('Lastpass.FormField')] $FormFields,
 
 		[Parameter(ValueFromPipelineByPropertyName)]
@@ -1424,7 +1591,7 @@ Function Set-Item {
 			$Body.username = $Credential.Username | ConvertTo-LPEncryptedString -Key $Key
 			$Body.password = $Credential.GetNetworkCredential().Password |
 				ConvertTo-LPEncryptedString -Key $Key
-			
+
 			# FIXME: This doesn't seem to work. Seems to match lastpass-cli code
 			If($FormFields){
 				$Body.data = ''
@@ -2113,5 +2280,5 @@ If($ModuleParameters.ExportWriteCmdlets){
 
 If($ModuleParameters.Debug){
 	$ExportMethods = '*'
-}	
+}
 Export-ModuleMember -Function $ExportMethods

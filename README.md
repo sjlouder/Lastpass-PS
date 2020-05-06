@@ -52,8 +52,9 @@ Currently supported:
 	* Supports shared accounts and notes
 	* Parses custom notes
 	* Supports password protection
+		* Currently, there is no UI to set a timespan between reprompts
 	* Supports form fields
-	* Attachments **not** supported
+	* Supports downloading attachments
 * Password generation
 
 Experimental/in development:
@@ -70,33 +71,32 @@ Experimental/in development:
 	```
 
 Planned:
-* Accounts Support
+* Full Accounts Support
 	* Create/delete
 	* Move (folders)
 	* Sharing
-* Notes support
+* Full Notes support
 	* Create/delete
 	* Move
 	* Sharing
 * Other Login methods
 	* Yubikey
 	* Sesame
-* Folders support
+* Folder management support
 	* Create/update/delete
 	* Move
 	* Un/share
 	* Manage sharing
-* Attachment support
-	* Create/read/update/delete
+* Full Attachment support
+	* Create/update/delete
 * Import/export
 * Lastpass:\ PS Drive (Hierarchical browsing of folders/accounts/notes) 
 * Logout
 * Change master password
-* Automatic syncing
 
 Ideas:
 * Create custom note types
-* Background Syncing
+* Automatic/Background Syncing
 * Admin:
 	* User management
 	* Usergroup management
