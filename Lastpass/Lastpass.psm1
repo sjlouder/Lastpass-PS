@@ -473,6 +473,46 @@ Function Connect-Lastpass {
 
 
 
+Function Disconnect-Lastpass {
+	<#
+	.SYNOPSIS
+	Ends Lastpass session
+
+	.DESCRIPTION
+	Calls the logout API and clears the local session
+	Does not currently support saving local copy of vault
+
+	.EXAMPLE
+	Disconnect-Lastpass
+
+	Ends the current Lastpass session
+
+	#>
+
+	[CmdletBinding()]
+	Param()
+
+	$Param = @{
+		Method = 'Post'
+		URI = 'https://lastpass.com/logout.php'
+		WebSession = $Script:WebSession
+		Body = @{
+			method = 'cli'
+			noredirect = '1'
+			token = $Session.Token
+		}
+	}
+	Invoke-RestMethod @Param
+
+	$Script:Session = $Null
+	$Script:Blob = $Null
+	$Script:WebSession = $Null
+	$Script:PasswordTimeout = New-Timespan
+	$Script:PasswordPrompt = $Null
+}
+
+
+
 Function Sync-Lastpass {
 
 	<#
@@ -493,7 +533,7 @@ Function Sync-Lastpass {
 	[CmdletBinding()]
 	Param()
 
-	If(!$Session){ Throw 'Not logged in. Use Connect-Lastpass to Log in' }
+	If(!$Script:Session){ Throw 'User session not found. Log in with Connect-Lastpass' }
 	Write-Verbose 'Syncing Lastpass information'
 
 	$Param = @{
@@ -750,6 +790,11 @@ Function Get-Account {
 		)]
 		[String[]] $Name
 	)
+
+	BEGIN {
+		If(!$Script:Session){ Throw 'User session not found. Log in with Connect-Lastpass' }
+	}
+
 	PROCESS {
 		If(!$Name){ Return $Script:Blob.Accounts | Select ID, Name }
 		$Name | ForEach {
@@ -899,6 +944,8 @@ Function Set-Account {
 		[Switch] $DisableAutofill
 	)
 
+	If(!$Script:Session){ Throw 'User session not found. Log in with Connect-Lastpass' }
+
 	"Set-Account called with parameters:`n{0}" -f ($PSBoundParameters | Out-String) | Write-Debug
 	If($FormFields){ Throw 'Updating accounts with form fields not supported currently' }
 
@@ -957,6 +1004,9 @@ Function Get-Note {
 		)]
 		[String[]] $Name
 	)
+	BEGIN {
+		If(!$Script:Session){ Throw 'User session not found. Log in with Connect-Lastpass' }
+	}
 	PROCESS {
 		If(!$Name){ Return $Script:Blob.SecureNotes | Select ID, Name }
 		$Name | ForEach {
@@ -1083,6 +1133,8 @@ Function Set-Note {
 		[Switch] $Favorite
 	)
 
+	If(!$Script:Session){ Throw 'User session not found. Log in with Connect-Lastpass' }
+
 	$Param = @{
 		ID				= $Note.ID
 		Name			= $Name
@@ -1103,6 +1155,7 @@ Function Set-Note {
 	Set-Item @Param
 
 }
+
 
 
 Function Get-Attachment {
@@ -1157,6 +1210,8 @@ Function Get-Attachment {
 		[Switch] $Force
 	)
 
+	If(!$Script:Session){ Throw 'User session not found. Log in with Connect-Lastpass' }
+
 	$NoteID = $Attachment.ID -split '-' | Select -First 1
 	$Note = Get-Note | Where ID -eq $NoteID | Get-Note
 	If(!$Note.AttachmentKey){ Throw 'Unable to find attachment key' }
@@ -1200,6 +1255,7 @@ Function Get-Attachment {
 	Set-Content -Path $FilePath -Value $Content -AsByteStream
 	Get-Item $FilePath | Write-Output
 }
+
 
 
 Function New-Password {
@@ -2258,6 +2314,7 @@ Function Set-Session {
 	$Script:Session = $Session.Session
 
 }
+
 
 
 $ExportMethods = @(
