@@ -437,7 +437,50 @@ InModuleScope Lastpass {
 
 	}
 
+	Describe Disconnect-Lastpass {
+		BeforeAll {
+			$Script:WebSession = [Microsoft.Powershell.Commands.WebRequestSession]::New()
+			$Script:Session = @{ Token = '112e12e2q2eq2nuif2p3hu' }
+		}
+		Disconnect-Lastpass
+
+		It 'Calls the logout API' {
+			Assert-MockCalled Invoke-RestMethod -ParameterFilter {
+				$URI -eq 'https://lastpass.com/logout.php' -and
+				$Method -eq 'Post' -and
+				$WebSession -and
+				$Body.Method -eq 'cli' -and
+				$Body.NoRedirect -eq '1' -and
+				$Body.Token -eq '112e12e2q2eq2nuif2p3hu'
+			}
+		}
+
+		It 'Resets the session' {
+			$Script:Session | Should -BeNullOrEmpty
+		}
+
+		It 'Resets the vault' {
+			$Script:Blob | Should -BeNullOrEmpty
+		}
+
+		It 'Resets the websession' {
+			$Script:WebSession | Should -BeNullOrEmpty
+		}
+
+		It 'Resets the password prompt timeout' {
+			$Script:PasswordTimeout | Should -Be (New-Timespan)
+		}
+
+		It 'Resets the last password prompt time' {
+			$Script:PasswordPrompt | Should -BeNullOrEmpty
+		}
+	}
+
 	Describe Sync-Lastpass {
+
+		It 'Throws if user is not logged in' {
+			{Sync-Lastpass} | Should -Throw 'User session not found. Log in with Connect-Lastpass'
+		}
 
 		$Script:Session = [PSCustomObject] @{
 			Key = [Byte[]] @(
@@ -650,6 +693,13 @@ InModuleScope Lastpass {
 	}
 
 	Describe New-Account {
+		It 'Throws if user is not logged in' -skip {
+			$TempSession = $Script:Session
+			$Script:Session = $Null
+			{ New-Account } | Should -Throw 'User session not found. Log in with Connect-Lastpass'
+			$Script:Session = $TempSession
+		}
+
 		It 'Sets the account id to 0' -skip {
 			Verify-MockCalled Invoke-RestMethod -ParameterFilter {
 				$URI -eq 'https://lastpass.com/show_website.php' -and
@@ -684,6 +734,13 @@ InModuleScope Lastpass {
 				Iterations = '1'
 			}
 			$ExpectedAccounts = (Get-Content $ScriptRoot/DecryptedVault.json | ConvertFrom-Json -AsHashTable).Accounts
+		}
+
+		It 'Throws if user is not logged in' {
+			$TempSession = $Script:Session
+			$Script:Session = $Null
+			{ Get-Account } | Should -Throw 'User session not found. Log in with Connect-Lastpass'
+			$Script:Session = $TempSession
 		}
 
 		$Result = Get-Account
@@ -771,11 +828,6 @@ InModuleScope Lastpass {
 
 		Mock Set-Item
 
-		# Just pass account, it passes the properties
-		# If parameter is passed, it overrides the account value
-		# Pipeline
-		# Non-pipeline
-
 		$Account = [PSCustomObject] @{
 			PSTypeName	 = 'Lastpass.Account'
 			ID           = '5148901049320353252'
@@ -794,6 +846,13 @@ InModuleScope Lastpass {
 			LaunchCount  = 0
 			Bookmark     = $False
 			Password     = 'fdsafdasfda'
+		}
+
+		It 'Throws if user is not logged in' {
+			$TempSession = $Script:Session
+			$Script:Session = $Null
+			{ $Account | Set-Account } | Should -Throw 'User session not found. Log in with Connect-Lastpass'
+			$Script:Session = $TempSession
 		}
 
 		$Account | Set-Account
@@ -854,7 +913,14 @@ InModuleScope Lastpass {
 			}
 			$ExpectedNotes = (Get-Content $ScriptRoot/DecryptedVault.json | ConvertFrom-Json).SecureNotes
 		}
-		#Simple test
+
+		It 'Throws if user is not logged in' {
+			$TempSession = $Script:Session
+			$Script:Session = $Null
+			{ Get-Note } | Should -Throw 'User session not found. Log in with Connect-Lastpass'
+			$Script:Session = $TempSession
+		}
+
 		$Result = Get-Note
 
 		It 'Returns a list of all note IDs and names if no name is specified' {
@@ -944,6 +1010,13 @@ InModuleScope Lastpass {
 			LastAccessed = [DateTime] '4/4/19 1:42:48 AM'
 		}
 
+		It 'Throws if user is not logged in' {
+			$TempSession = $Script:Session
+			$Script:Session = $Null
+			{ $Note | Set-Note } | Should -Throw 'User session not found. Log in with Connect-Lastpass'
+			$Script:Session = $TempSession
+		}
+
 		$Note | Set-Note
 
 		It 'Calls Set-Item with the SecureNote parameter' {
@@ -1008,6 +1081,13 @@ InModuleScope Lastpass {
 			StorageKey	= $AttachmentMetadata.StorageKey
 			Size		= $AttachmentMetadata.Size
 			FileName	= $AttachmentMetadata.FileName
+		}
+
+		It 'Throws if user is not logged in' {
+			$TempSession = $Script:Session
+			$Script:Session = $Null
+			{ $AttachmentMetadata | Get-Attachment -FilePath TestDrive:/Attachment.txt } | Should -Throw 'User session not found. Log in with Connect-Lastpass'
+			$Script:Session = $TempSession
 		}
 
 		$R = $AttachmentMetadata | Get-Attachment -FilePath TestDrive:/Attachment.txt
