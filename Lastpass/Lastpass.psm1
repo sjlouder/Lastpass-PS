@@ -502,7 +502,7 @@ Function Disconnect-Lastpass {
 			token = $Session.Token
 		}
 	}
-	Invoke-RestMethod @Param
+	Invoke-RestMethod @Param | Out-Null
 
 	$Script:Session = $Null
 	$Script:Blob = $Null
@@ -2319,9 +2319,11 @@ Function Set-Session {
 
 $ExportMethods = @(
 	'Connect-Lastpass'
+	'Disconnect-Lastpass'
 	'Sync-Lastpass'
 	'Get-Account'
 	'Get-Note'
+	'Get-Attachment'
 	'New-Password'
 )
 
