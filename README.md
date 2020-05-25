@@ -52,6 +52,9 @@ Currently supported:
 	* Supports shared accounts and notes
 	* Parses custom notes
 	* Supports password protection
+		* Currently, there is no UI to set a timespan between reprompts
+	* Supports form fields
+	* Supports downloading attachments
 * Password generation
 
 Experimental/in development:
@@ -59,7 +62,7 @@ Experimental/in development:
 	* **WARNING**: Not fully tested. **Create backup copies of your data before using this project to make any modifications.**
 	* **WARNING**: Shared items not currently supported
 	* **WARNING**: Custom Notes not fully tested
-	* **WARNING**: form fields (and likely attachments) are not currently supported and will be **lost**!
+	* **WARNING**: Attachments and form fields are not currently supported and will be **lost**!
 	* **NOTE**: These functions (Set-Account and Set-Note) are not exposed by default while they are in
 	development. In order to enable these functions, pass in a hashtable to the module with a key
 	named "ExportWriteCmdlets" and the value set to $True, eg:
@@ -68,33 +71,32 @@ Experimental/in development:
 	```
 
 Planned:
-* Accounts Support
+* Full Accounts Support
 	* Create/delete
 	* Move (folders)
 	* Sharing
-* Notes support
+* Full Notes support
 	* Create/delete
 	* Move
 	* Sharing
 * Other Login methods
 	* Yubikey
 	* Sesame
-* Folders support
+* Folder management support
 	* Create/update/delete
 	* Move
 	* Un/share
 	* Manage sharing
-* Attachment support
-	* Create/read/update/delete
+* Full Attachment support
+	* Create/update/delete
 * Import/export
 * Lastpass:\ PS Drive (Hierarchical browsing of folders/accounts/notes) 
 * Logout
 * Change master password
-* Automatic syncing
 
 Ideas:
 * Create custom note types
-* Background Syncing
+* Automatic/Background Syncing
 * Admin:
 	* User management
 	* Usergroup management

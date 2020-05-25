@@ -1,5 +1,5 @@
 # Lastpass Powershell Module
-# Copyright (C) 2019 Steven Loudermilk
+# Copyright (C) 2020 Steven Loudermilk
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -69,8 +69,8 @@ $Script:Schema = @{
 			Action = 'Skip'
 			GroupID = 'String' #?
 			Deleted = 'Boolean' #?
-			EncryptedAttachmentKey = 'String'#'Encrypted'
-			AttachmentPresent = 'String'
+			AttachmentKey = 'String'
+			AttachmentPresent = 'Boolean'
 			IndividualShare = 'Boolean' #?
 			NoteType = 'String' #?
 			NoAlert = 'String' #?
@@ -95,7 +95,7 @@ $Script:Schema = @{
 			'NoteType'
 			'Notes'
 			'AttachmentPresent'
-			'EncryptedAttachmentKey'
+			'AttachmentKey'
 			'PasswordProtect'
 			'Favorite'
 			'Deleted'
@@ -162,6 +162,35 @@ $Script:Schema = @{
 		DefaultFields = @(
 			'Name'
 			'ReadOnly'
+		)
+	}
+	FormField = @{
+		Fields = [Ordered] @{
+			Name = 'String'
+			Type = 'String'
+			Value = 'Other'
+			Checked = 'Boolean'
+		}
+		DefaultFields = @(
+			'Name'
+			'Type'
+			'Value'
+			'Checked'
+		)
+	}
+	Attachment = @{
+		Fields = [Ordered] @{
+			ID = 'String'
+			Parent = 'String'
+			MIMEType = 'String'
+			StorageKey = 'String'
+			Size = 'String'
+			FileName = 'Encrypted'
+		}
+		DefaultFields = @(
+			'FileName'
+			'MIMEType'
+			'Size'
 		)
 	}
 }
@@ -332,18 +361,18 @@ Function Connect-Lastpass {
 			# Parse custombutton and customaction attributes
 			Default { Throw $Response.Error.Message }
 		}
-}
+	}
 	$Response.OK | Out-String | Write-Debug
 	If(!$Response.OK){ Throw 'Login unsuccessful' }
 
 	$Script:Session = [PSCustomObject] @{
-		UID					= $Response.OK.UID
-		SessionID			= $Response.OK.SessionID
-		Token				= $Response.OK.Token
-		PrivateKey			= [RSAParameters]::New()
-		Iterations			= $Response.OK.Iterations
-		Username			= $Response.OK.LPUsername
-		Key					= $Key
+		UID			= $Response.OK.UID
+		SessionID	= $Response.OK.SessionID
+		Token		= $Response.OK.Token
+		PrivateKey	= [RSAParameters]::New()
+		Iterations	= $Response.OK.Iterations
+		Username	= $Response.OK.LPUsername
+		Key			= $Key
 	}
 
 	If($Response.OK.PrivateKeyEnc){
@@ -444,6 +473,46 @@ Function Connect-Lastpass {
 
 
 
+Function Disconnect-Lastpass {
+	<#
+	.SYNOPSIS
+	Ends Lastpass session
+
+	.DESCRIPTION
+	Calls the logout API and clears the local session
+	Does not currently support saving local copy of vault
+
+	.EXAMPLE
+	Disconnect-Lastpass
+
+	Ends the current Lastpass session
+
+	#>
+
+	[CmdletBinding()]
+	Param()
+
+	$Param = @{
+		Method = 'Post'
+		URI = 'https://lastpass.com/logout.php'
+		WebSession = $Script:WebSession
+		Body = @{
+			method = 'cli'
+			noredirect = '1'
+			token = $Session.Token
+		}
+	}
+	Invoke-RestMethod @Param | Out-Null
+
+	$Script:Session = $Null
+	$Script:Blob = $Null
+	$Script:WebSession = $Null
+	$Script:PasswordTimeout = New-Timespan
+	$Script:PasswordPrompt = $Null
+}
+
+
+
 Function Sync-Lastpass {
 
 	<#
@@ -464,7 +533,7 @@ Function Sync-Lastpass {
 	[CmdletBinding()]
 	Param()
 
-	If(!$Session){ Throw 'Not logged in. Use Connect-Lastpass to Log in' }
+	If(!$Script:Session){ Throw 'User session not found. Log in with Connect-Lastpass' }
 	Write-Verbose 'Syncing Lastpass information'
 
 	$Param = @{
@@ -481,11 +550,10 @@ Function Sync-Lastpass {
 	$Response = Invoke-RestMethod @Param
 
 	If($Response.Error){ Throw $Response.Error.Cause }
-	$Response = [Byte[]][Char[]] $Response
-	#If($PSBoundParameters.Debug){ Return $Response }
+	If($PSBoundParameters.Debug){ Return $Response }
 	#"Response:`n{0}" -f $Response | Write-Debug
-	#$Response = ([char[]][Convert]::FromBase64String($Response)) -join ''
-	$Script:LastSyncTime = Get-Date
+	# Return ([char[]][Convert]::FromBase64String($Response)) -join ''
+	$Response = [Byte[]][Char[]] $Response
 
 	#TODO: Cleanup debug output.
 	#	Wrap parse in try/catch and provide info in catch error
@@ -544,7 +612,7 @@ Function Sync-Lastpass {
 					Write-Debug "End Field $_"
 				}
 
-				If($Account.Folder -eq '(none)'){ $Account.Folder = $Null }
+				If($Account.Folder -in '(none)', ''){ $Account.Folder = $Null }
 
 				If($Blob.SharedFolders[-1]){
 					If($Account.Folder){
@@ -560,6 +628,12 @@ Function Sync-Lastpass {
 						$Account.Keys.Where({$_ -notin $Schema.SecureNote.Fields }) |
 							ForEach { $Account.Remove($_) }
 						$Account.PSTypeName = 'Lastpass.SecureNote'
+						If($Account.AttachmentPresent){
+
+							$Account.AttachmentKey = ConvertTo-LPEncryptedString @Param -Bytes (
+								[Byte[]] [Char[]] $Account.AttachmentKey
+							)
+						}
 						$Blob.SecureNotes += $Account
 					}
 					'http://group' {
@@ -576,6 +650,63 @@ Function Sync-Lastpass {
 				}
 
 				Write-Debug "END ACCOUNT DECODE"
+			}
+			{$_ -in 'ACFL','ACOF'} {
+				Write-Debug 'BEGIN FORMFIELD DECODE'
+				If(!$Blob.Accounts[-1]){ Write-Error 'Parse failed. Unable to find account for form fields' }
+				If(!$Blob.Accounts[-1].FormFields){ $Blob.Accounts[-1].FormFields = @() }
+				$FormField = [Ordered] @{}
+
+				$Schema.FormField.Fields.Keys | ForEach {
+					Write-Debug "Field: $_"
+					$Item = Read-Item -Blob $Data -Index $ItemIndex -Debug:$False
+					'Returned length: {0}' -f $Item.Length | Write-Debug
+					$ItemIndex += $Item.length + 4
+
+					$FormField[$_] = Switch($Schema.FormField.Fields[$_]){
+						Boolean { !!([Int] ([Char[]] $Item -join '')) }
+						String { If($Item){[Char[]] $Item -join ''} }
+						Default { $Item }
+					}
+					Write-Debug "End Field $_"
+				}
+				Switch -Regex ($FormField.Type){
+					'email|tel|text|password|textarea' {
+						$FormField.Value = ConvertTo-LPEncryptedString @Param -Bytes $FormField.Value
+					}
+					Default { $FormField.Value = [Char[]] $FormField.Value -join '' }
+				}
+				$Blob.Accounts[-1].FormFields += $FormField
+				Write-Debug 'END FORMFIELD DECODE'
+			}
+			ATTA {
+				Write-Debug 'BEGIN ATTACHMENT DECODE'
+
+				$Attachment = @{ PSTypeName = 'Lastpass.Attachment' }
+				$Schema.Attachment.Fields.Keys | ForEach {
+					Write-Debug "Field: $_"
+
+					$Item = Read-Item -Blob $Data -Index $ItemIndex -Debug:$False
+					'Returned length: {0}' -f $Item.Length | Write-Debug
+					$ItemIndex += $Item.length + 4
+					$Attachment[$_] = Switch($Schema.Attachment.Fields[$_]){
+						Encrypted { ConvertTo-LPEncryptedString @Param -Bytes $Item }
+						String { If($Item){[Char[]] $Item -join ''} }
+					}
+
+					Write-Debug "End Field: $_"
+				}
+				$SecureNote = $Blob.SecureNotes | Where ID -eq $Attachment.Parent
+				If(!$SecureNote){
+					"Unable to find Secure Note for attachment {0}`n{1}" -f @(
+						$Attachment.ID
+						$Attachment | Out-String
+					) | Write-Warning
+				}
+				If(!$SecureNote.Attachments){ $SecureNote.Attachments = @() }
+				$SecureNote.Attachments += $Attachment
+
+				Write-Debug 'END ATTACHMENT DECODE'
 			}
 			SHAR {
 				Write-Debug "BEGIN SHARE DECODE"
@@ -621,7 +752,7 @@ Function Sync-Lastpass {
 		}
 	}
 
-
+	$Script:LastSyncTime = Get-Date
 	$Script:Blob = [PSCustomObject] $Script:Blob
 	If($PSBoundParameters.Debug){ Write-Output $Script:Blob }
 
@@ -659,6 +790,11 @@ Function Get-Account {
 		)]
 		[String[]] $Name
 	)
+
+	BEGIN {
+		If(!$Script:Session){ Throw 'User session not found. Log in with Connect-Lastpass' }
+	}
+
 	PROCESS {
 		If(!$Name){ Return $Script:Blob.Accounts | Select ID, Name }
 		$Name | ForEach {
@@ -674,13 +810,31 @@ Function Get-Account {
 				}
 
 				$_.GetEnumerator() | ForEach {
-					If($_.Value -isnot [SecureString]){
-						$Account[$_.Key] = $_.Value
+					If($_.Key -eq 'FormFields'){
+						$Account.FormFields = @()
+						$_.Value | ForEach {
+							$_ | Out-String | Write-Debug
+							Write-Debug "FormField: $($_.Name)"
+							$_.Value | Out-String | Write-Debug
+							$Field = @{
+								PSTypeName = 'Lastpass.FormField'
+								Name = $_.Name
+								Type = $_.Type
+								Value = $_.Value
+								Checked = $_.Checked
+							}
+							If($_.Value -is [SecureString]){
+								$Param.SecureString = $_.Value
+								$Field.Value = ConvertFrom-LPEncryptedData @Param
+							}
+							$Account.FormFields += [PSCustomObject] $Field
+						}
 					}
-					Else{
+					ElseIf($_.Value -is [SecureString]){
 						$Param.SecureString = $_.Value
 						$Account[$_.Key] = ConvertFrom-LPEncryptedData @Param
 					}
+					Else{ $Account[$_.Key] = $_.Value }
 				}
 
 				$Credential = @{ Username = $Account.Username }
@@ -725,6 +879,9 @@ Function Set-Account {
 
 	.PARAMETER Notes
 	The notes tied to the account
+
+	.PARAMETER FormFields
+	The account form fields
 
 	.PARAMETER PasswordProtect
 	Whether to require a password reprompt to access the account
@@ -772,6 +929,9 @@ Function Set-Account {
 		[String] $Notes,
 
 		[Parameter(ValueFromPipelineByPropertyName)]
+		[PSTypeName('Lastpass.FormField')] $FormFields,
+
+		[Parameter(ValueFromPipelineByPropertyName)]
 		[Switch] $PasswordProtect,
 
 		[Parameter(ValueFromPipelineByPropertyName)]
@@ -784,7 +944,10 @@ Function Set-Account {
 		[Switch] $DisableAutofill
 	)
 
+	If(!$Script:Session){ Throw 'User session not found. Log in with Connect-Lastpass' }
+
 	"Set-Account called with parameters:`n{0}" -f ($PSBoundParameters | Out-String) | Write-Debug
+	If($FormFields){ Throw 'Updating accounts with form fields not supported currently' }
 
 	$Param = @{
 		ID				= $Account.ID
@@ -793,6 +956,7 @@ Function Set-Account {
 		URL				= $URL
 		Credential		= $Credential
 		Notes			= $Notes
+		FormFields		= $FormFields
 		PasswordProtect	= $PasswordProtect
 		Favorite		= $Favorite
 		AutoLogin		= $AutoLogin
@@ -803,7 +967,6 @@ Function Set-Account {
 
 	"Calling Set-Item with parameters:`n{0}" -f ($Param | Out-String) | Write-Debug
 	Set-Item @Param
-
 }
 
 
@@ -841,6 +1004,9 @@ Function Get-Note {
 		)]
 		[String[]] $Name
 	)
+	BEGIN {
+		If(!$Script:Session){ Throw 'User session not found. Log in with Connect-Lastpass' }
+	}
 	PROCESS {
 		If(!$Name){ Return $Script:Blob.SecureNotes | Select ID, Name }
 		$Name | ForEach {
@@ -854,15 +1020,30 @@ Function Get-Note {
 						Where ID -eq $_.ShareID |
 						ForEach Key
 				}
-
-				$_.GetEnumerator() | ForEach {
-					If($_.Value -isnot [SecureString]){
-						$Note[$_.Key] = $_.Value
+				If($_.AttachmentKey){
+					$AttachmentKey = $_.AttachmentKey |
+						ConvertFrom-LPEncryptedData @Param -Base64 |
+						ConvertFrom-Hex
+				}
+				$_.GetEnumerator() | Where Key -ne 'AttachmentKey' | ForEach {
+					'Key: {0}' -f $_.Key | Write-Debug
+					If($_.Key -eq 'Attachments'){
+						$Note.Attachments = $_.Value | ForEach {
+							[PSCustomObject] @{
+								PStypeName = 'Lastpass.Attachment'
+								ID = $_.ID
+								MIMEType = $_.MIMEType
+								StorageKey = $_.StorageKey
+								Size = $_.Size
+								FileName = $_.FileName |
+									ConvertFrom-LPEncryptedData -Key $AttachmentKey -Base64
+							}
+						}
 					}
-					Else{
-						$Param.SecureString = $_.Value
-						$Note[$_.Key] = ConvertFrom-LPEncryptedData @Param
+					ElseIf($_.Value -is [SecureString]){
+						$Note[$_.Key] = $_.Value | ConvertFrom-LPEncryptedData @Param
 					}
+					Else{ $Note[$_.Key] = $_.Value }
 				}
 
 				If(
@@ -888,6 +1069,7 @@ Function Get-Note {
 		}
 	}
 }
+
 
 
 Function Set-Note {
@@ -951,6 +1133,8 @@ Function Set-Note {
 		[Switch] $Favorite
 	)
 
+	If(!$Script:Session){ Throw 'User session not found. Log in with Connect-Lastpass' }
+
 	$Param = @{
 		ID				= $Note.ID
 		Name			= $Name
@@ -970,6 +1154,106 @@ Function Set-Note {
 	}
 	Set-Item @Param
 
+}
+
+
+
+Function Get-Attachment {
+	<#
+	.SYNOPSIS
+	Gets a Secure Note attachment
+
+	.DESCRIPTION
+	Long description
+
+	.PARAMETER Attachment
+	The attachment metadata object
+
+	.PARAMETER FilePath
+	The path to save the attachment to.
+	If the specified path is a directory, the attachment
+	filename will be appended to the path automatically
+
+	.PARAMETER Force
+	If specified, the function will overwrite an existing file at the specified path
+	By default if a file exists at the specified path, a confirmation prompt to overwrite is shown
+
+	.EXAMPLE
+	$Note = Get-Note 'AttachmentNote'
+	Get-Attachment $Note.Attachments[0] $env:HOME/Downloads/secretfile.txt
+
+	Downloads the first attachment of the 'AttachmentNote' secure note
+	and saves it to the Downloads folder in the user's home directory with the name 'secretfile.txt'
+	If a file already exists at that path, the function will prompt whether to overwrite
+
+	.EXAMPLE
+	New-Item -ItemType Directory Attachments -Force
+	$Note = Get-Note 'AttachmentNote'
+	$Note.Attachments | Get-Attachment -FilePath ./Attachments -Force
+
+	Downloads all of the attachments of the 'AttachmentNote' secure note
+	to the Attachments directory in the current directory.
+	Each attachment is saved with it's respective original filename in Lastpass
+	Any existing files are overwritten without confirmation
+	#>
+
+	[CmdletBinding()]
+	Param(
+		[Parameter(ValueFromPipeline)]
+		[Alias('AttachmentMetadata')]
+		[PSTypeName('Lastpass.Attachment')] $Attachment,
+
+		[Parameter(Mandatory)]
+		[ValidateScript({ Test-Path -IsValid $_ })]
+		[String] $FilePath,
+
+		[Switch] $Force
+	)
+
+	If(!$Script:Session){ Throw 'User session not found. Log in with Connect-Lastpass' }
+
+	$NoteID = $Attachment.ID -split '-' | Select -First 1
+	$Note = Get-Note | Where ID -eq $NoteID | Get-Note
+	If(!$Note.AttachmentKey){ Throw 'Unable to find attachment key' }
+	$Param = @{
+		URI = 'https://lastpass.com/getattach.php'
+		WebSession = $WebSession
+		Method = 'Post'
+		Body = @{
+			token = $Session.Token
+			getattach = $Attachment.StorageKey
+		}
+	}
+
+	If($Note.ShareID){ $Param.Body.sharedfolderid = $Note.ShareID }
+
+	Try{ $Content = Invoke-RestMethod @Param }
+	Catch{ Throw "Failed to download attachment from Lastpass server`n{0}" -f $_ }
+
+	# May need to unescape backslashes in response
+	Try{
+		$Content = $Content | ConvertFrom-LPEncryptedData -Base64 -Key $Note.AttachmentKey
+		$Content = [Convert]::FromBase64String($Content)
+	}
+	Catch{ Throw "Failed to decrypt attachment`n{0}" -f $_ }
+
+
+	If(Test-Path -PathType Container $FilePath){
+		$FilePath = Join-Path $FilePath $Attachment.FileName
+	}
+
+	If(!$Force -and (Test-Path $FilePath)){
+		Do{
+			Switch(Read-Host ('Overwrite File {0}? (y/N)' -f $FilePath)){
+				Y { $Break = $True }
+				N { Return }
+				'' { Return }
+			}
+		}While(!$Break)
+	}
+
+	Set-Content -Path $FilePath -Value $Content -AsByteStream
+	Get-Item $FilePath | Write-Output
 }
 
 
@@ -1165,18 +1449,21 @@ Function Set-Item {
 	.PARAMETER Folder
 	The directory path that contains the item
 
+	.PARAMETER ShareID
+	The ID of the share that contains the item
+
 	.PARAMETER URL
 	The URL of the item,
 	If secure note, this is set to 'http://sn'
 
-	.PARAMETER Username
+	.PARAMETER Credential
 	The username of the account
 
-	.PARAMETER Password
-	The password of the account
-
 	.PARAMETER Notes
-	The notes tied to the item
+	The item's notes
+
+	.PARAMETER FormFields
+	The item's formfields
 
 	.PARAMETER PasswordProtect
 	Whether to require a password reprompt to access the item
@@ -1252,6 +1539,12 @@ Function Set-Item {
 		[Alias('Content','Extra')]
 		[String] $Notes,
 
+		[Parameter(
+			ParameterSetName='Account',
+			ValueFromPipelineByPropertyName
+		)]
+		[PSTypeName('Lastpass.FormField')] $FormFields,
+
 		[Parameter(ValueFromPipelineByPropertyName)]
 		[Switch] $PasswordProtect,
 
@@ -1315,7 +1608,6 @@ Function Set-Item {
 		# 			sharedfolderid = $Account > Share.ID
 		# save blob
 
-
 		If($ShareID){
 			If(($Blob.SharedFolders | Where ID -eq $ShareID).ReadOnly){
 				$Type = If($SecureNote){ 'Note' }Else{ 'Account' }
@@ -1326,7 +1618,10 @@ Function Set-Item {
 			$Key = $Blob.SharedFolders | Where ID -eq $ShareID | Select -Expand Key
 		}
 
-		If($SecureNote){ $URL = 'http://sn' }
+		If($SecureNote){
+			$URL = 'http://sn'
+			$VerboseDescription = "secure note '$Name'"
+		}
 		$Body += @{
 			aid		 = $ID
 			name	 = $Name | ConvertTo-LPEncryptedString -Key $Key
@@ -1352,18 +1647,38 @@ Function Set-Item {
 			$Body.username = $Credential.Username | ConvertTo-LPEncryptedString -Key $Key
 			$Body.password = $Credential.GetNetworkCredential().Password |
 				ConvertTo-LPEncryptedString -Key $Key
+
+			# FIXME: This doesn't seem to work. Seems to match lastpass-cli code
+			If($FormFields){
+				$Body.data = ''
+				$Body.data += $FormFields | ForEach {
+					$Field = $_
+					# $Field.Value.FieldType | Out-String | Write-Host
+					$Value = Switch -Regex ($Field.Type){
+						'email|tel|text|password|textarea' { $Field.Value | ConvertTo-LPEncryptedString -Key $Key }
+						'checkbox|radio' { '{0}-{1}' -f $Field.Value, [Int] $Field.Checked }
+						Default { $Field.Value }
+					}
+
+					"0`t{0}`t{1}`t{2}`n" -f @(
+						[URI]::EscapeDataString($Field.Name)
+						[URI]::EscapeDataString($Field.Type)
+						[URI]::EscapeDataString($Value)
+					)
+
+				}
+				$Body.data += "0`taction`t`taction`n0`tmethod`t`tmethod`n"
+				# Write-Host $Body.Data
+				$Body.data = ([Byte[]][Char[]] $Body.Data | ForEach { "{0:x2}" -f $_ }) -join ''
+				# Write-Host $Body.Data
+				$Body.save_all = '1'
+			}
 			If($AutoLogin){ $Body.autologin = 'on' }
 			If($DisableAutofill){ $Body.never_autofill = 'on' }
+			$VerboseDescription = "account '$Name'"
 		}
 
 		"Request Parameters:`n{0}" -f ($Body | Out-String) | Write-Debug
-		$VerboseDescription = '{0} "{1}"' -f '{0}', $Name
-		If($SecureNote){
-			$VerboseDescription = $VerboseDescription -f 'secure note'
-		}
-		Else{
-			$VerboseDescription = $VerboseDescription -f 'account'
-		}
 		$Query = "WARNING: update support is currently experimental`n" +
 			"DATA LOSS MAY OCCUR (especially if item has form fields or attachments)`n" +
 			"Update $VerboseDescription" -f $Name
@@ -1390,7 +1705,7 @@ Function Set-Item {
 		}
 	}
 
-	END { Sync-Lastpass }
+	END { Sync-Lastpass -Debug:$False }
 }
 
 
@@ -1845,6 +2160,7 @@ Function ConvertTo-LPEncryptedString {
 			Return $Output
 		}
 		$Value | ForEach {
+			If(!$Value){ Return ''}
 			$AES.GenerateIV()
 			$Encryptor = $AES.CreateEncryptor()
 
@@ -1941,7 +2257,6 @@ Function Confirm-Password {
 
 
 
-#FIXME! Remove; for debugging purposes only
 Function Get-Session {
 	<#
 	.SYNOPSIS
@@ -2001,11 +2316,14 @@ Function Set-Session {
 }
 
 
+
 $ExportMethods = @(
 	'Connect-Lastpass'
+	'Disconnect-Lastpass'
 	'Sync-Lastpass'
 	'Get-Account'
 	'Get-Note'
+	'Get-Attachment'
 	'New-Password'
 )
 
@@ -2020,10 +2338,6 @@ If($ModuleParameters.ExportWriteCmdlets){
 }
 
 If($ModuleParameters.Debug){
-	$ExportMethods += @(
-		'Get-Session'
-		'Set-Session'
-	)
+	$ExportMethods = '*'
 }
-
 Export-ModuleMember -Function $ExportMethods

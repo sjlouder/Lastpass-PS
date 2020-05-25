@@ -1,10 +1,12 @@
-Import-Module -Force $PSScriptRoot/../Lastpass -ArgumentList @{ ExportWriteCmdlets = $True } -Verbose:$False
+Import-Module -Force $PSScriptRoot/../Lastpass -ArgumentList @{ Debug = $True } -Verbose:$False
 
 InModuleScope Lastpass {
 
 	$ScriptRoot = $PSScriptRoot
 	$IsInteractive = $Script:Interactive
 
+	$Script:ParsedVault = Get-Content $ScriptRoot/ParsedVault.json | ConvertFrom-JSON -AsHashtable
+	$Script:DecryptedVault = Get-Content $ScriptRoot/DecryptedVault.json | ConvertFrom-JSON -AsHashtable
 
 	# Make sure no tests actually reach out to the internet
 	Mock Invoke-RestMethod
@@ -435,7 +437,50 @@ InModuleScope Lastpass {
 
 	}
 
+	Describe Disconnect-Lastpass {
+		BeforeAll {
+			$Script:WebSession = [Microsoft.Powershell.Commands.WebRequestSession]::New()
+			$Script:Session = @{ Token = '112e12e2q2eq2nuif2p3hu' }
+		}
+		Disconnect-Lastpass
+
+		It 'Calls the logout API' {
+			Assert-MockCalled Invoke-RestMethod -ParameterFilter {
+				$URI -eq 'https://lastpass.com/logout.php' -and
+				$Method -eq 'Post' -and
+				$WebSession -and
+				$Body.Method -eq 'cli' -and
+				$Body.NoRedirect -eq '1' -and
+				$Body.Token -eq '112e12e2q2eq2nuif2p3hu'
+			}
+		}
+
+		It 'Resets the session' {
+			$Script:Session | Should -BeNullOrEmpty
+		}
+
+		It 'Resets the vault' {
+			$Script:Blob | Should -BeNullOrEmpty
+		}
+
+		It 'Resets the websession' {
+			$Script:WebSession | Should -BeNullOrEmpty
+		}
+
+		It 'Resets the password prompt timeout' {
+			$Script:PasswordTimeout | Should -Be (New-Timespan)
+		}
+
+		It 'Resets the last password prompt time' {
+			$Script:PasswordPrompt | Should -BeNullOrEmpty
+		}
+	}
+
 	Describe Sync-Lastpass {
+
+		It 'Throws if user is not logged in' {
+			{Sync-Lastpass} | Should -Throw 'User session not found. Log in with Connect-Lastpass'
+		}
 
 		$Script:Session = [PSCustomObject] @{
 			Key = [Byte[]] @(
@@ -453,6 +498,14 @@ InModuleScope Lastpass {
 		}
 
 		$Expected = Get-Content $ScriptRoot/ParsedVault.json | ConvertFrom-Json
+		$Expected.Accounts | Where  { $_.FormFields } | ForEach {
+			$_.FormFields | Where Type -in 'text','password' | ForEach {
+				$_.Value = $_.Value | ConvertTo-SecureString -AsPlainText -Force
+			}
+		}
+		$Expected.SecureNotes | Where { $_.AttachmentKey } | ForEach {
+			$_.AttachmentKey = $_.AttachmentKey | ConvertTo-SecureString -AsPlainText -Force
+		}
 
 
 		Sync-Lastpass
@@ -466,10 +519,10 @@ InModuleScope Lastpass {
 		}
 
 		It 'Parses the blob version from blob' {
-			$Blob.Version | Should -Be 107
+			$Blob.Version | Should -Be $Expected.Version
 		}
 
-		It 'Parses and decrypts the accounts' {
+		It 'Parses the accounts' {
 			$Blob.Accounts.Length | Should -Be 5
 			$Expected.Accounts | ForEach {
 				$Reference = $_
@@ -479,28 +532,36 @@ InModuleScope Lastpass {
 					Should -BeNullOrEmpty
 
 				$Account.Keys |
-					Where {$_ -notin 'PSTypeName', 'Username', 'Password', 'Notes', 'Credential'} |
-					ForEach {
+					Where {
+						$_ -notin @(
+							'PSTypeName'
+							'Username'
+							'Password'
+							'Notes'
+							'Credential'
+							'FormFields'
+						)
+					} | ForEach {
 						If($Account.$_ -is [DateTime]){
-							$Account.$_.DateTime | Should -Be ($Epoch.AddSeconds([Int]$Reference.$_).DateTime)
+							#$Account.$_.DateTime | Should -Be ($Epoch.AddSeconds([Int]$Reference.$_).DateTime)
 						}Else{ $Account.$_ | Should -Be $Reference.$_ -Because $_}
 					}
 			}
 		}
 		$Account = $Blob.Accounts | Where ID -eq '1835977081662683158'
 
-		It 'Transforms the last modification timestamp to a DateTime object' {
+		It 'Converts the last modification timestamp to a DateTime object' {
 			$Account.LastModifiedGMT | Should -BeOfType DateTime
 			$Account.LastModifiedGMT | Should -Be ([DateTime] '08/15/2019 4:42:38 AM')
 		}
 
-		It 'Transforms the last access timestamp as a DateTime object' {
+		It 'Converts the last access timestamp as a DateTime object' {
 			$Account.LastAccessed | Should -BeOfType DateTime
 			$Account.LastAccessed | Should -Be ([DateTime] '01/25/2019 3:09:08 AM')
 		}
 
-		It 'Parses and decrypts the secure notes' {
-			$Blob.SecureNotes.Length | Should -Be 2
+		It 'Parses the secure notes' {
+			$Blob.SecureNotes.Length | Should -Be 3
 			$Expected.SecureNotes | ForEach {
 				$Reference = $_
 				$Note = ($Blob.SecureNotes | Where ID -eq $Reference.ID)
@@ -508,10 +569,17 @@ InModuleScope Lastpass {
 				Compare-Object $Reference.PSObject.Properties $Note.PSObject.Properties -Property Name |
 					Should -BeNullOrEmpty
 
-				$Note.Keys | Where { $_ -notin 'Notes', 'PSTypeName' } | ForEach {
+				$Note.Keys | Where {
+					$_ -notin @(
+						'Notes'
+						'PSTypeName'
+						'AttachmentKey'
+						'Attachments'
+					)
+				} | ForEach {
 					If($Note.$_ -is [DateTime]){
 						$Note.$_.DateTime | Should -Be ($Epoch.AddSeconds([Int]$Reference.$_).DateTime)
-					}Else{ $Note.$_ | Should -Be $Reference.$_ }
+					}Else{ $Note.$_ | Should -Be $Reference.$_ -Because $_ }
 				}
 			}
 		}
@@ -535,6 +603,67 @@ InModuleScope Lastpass {
 					ElseIf($Folder.$_ -is [DateTime]){
 						$Folder.$_.DateTime | Should -Be ($Epoch.AddSeconds([Int]$Reference.$_).DateTime)
 					}Else{ $Folder.$_ | Should -Be $Reference.$_ -Because $_ }
+				}
+			}
+		}
+
+		It 'Parses the account form fields' {
+			$Account = $Blob.Accounts | Where ID -eq '5148901049320353252'
+			$Account.FormFields | Should -Not -BeNullOrEmpty
+			$Account.FormFields | Should -BeOfType Collections.Specialized.OrderedDictionary
+
+			$ExpectedAccount = $Expected.Accounts | Where ID -eq $Account.ID
+			$ExpectedAccount.FormFields | ForEach {
+				$ExpectedField = $_
+				$Field = $Account.FormFields | Where Name -eq $_.Name
+				$Field | Should -Not -BeNullOrEmpty -Because $_.Name
+				'Name',
+				'Type',
+				'Checked' | ForEach {
+					$Field[$_] | Should -Be $ExpectedField.$_ -Because $_
+				}
+			}
+		}
+
+		It 'Decrypts the non-secure form field values' {
+			$Blob.Accounts | Where {$_.FormFields} | ForEach {
+				$Account = $_
+				$ExpectedAccount = $Expected.Accounts | Where ID -eq $Account.ID
+				$Account.FormFields | Where Type -eq 'Select-one' | ForEach {
+					$Field = $_
+					$ExpectedField = $ExpectedAccount.FormFields | Where Name -eq $Field.Name
+					$Field.Value | Should -Be $ExpectedField.Value
+				}
+				$Account.FormFields | Where Type -eq 'checkbox' | ForEach {
+					$Field = $_
+					$ExpectedField = $ExpectedAccount.FormFields | Where Name -eq $Field.Name
+					$Field.Checked | Should -Be $ExpectedField.Checked
+				}
+
+			}
+		}
+
+		It 'Converts the Secure form field values to a SecureString' {
+			$Blob.Accounts.FormFields | Where Type -in 'Text', 'Password' | ForEach {
+				$_.Value | Should -BeOfType SecureString
+			}
+		}
+
+		It 'Parses the secure note attachments' {
+			$Blob.SecureNotes | Where { $_.Attachments } | ForEach {
+				$Note = $_
+				$ExpectedNote = $Expected.SecureNotes | Where ID -eq $Note.ID
+				$Note.Attachments | ForEach {
+					$Attachment = $_
+					$Attachment | Should -Not -BeNullOrEmpty -Because $_.ID
+
+					$ExpectedAttachment = $ExpectedNote.Attachments | Where ID -eq $Attachment.ID
+					$Param = @{
+						ReferenceObject = $ExpectedAttachment.PSObject.Properties
+						DifferenceObject = $Attachment.PSObject.Properties
+						Property = 'Name', 'Value'
+					}
+					Compare-Object @Param | Should -BeNullOrEmpty
 				}
 			}
 		}
@@ -564,6 +693,13 @@ InModuleScope Lastpass {
 	}
 
 	Describe New-Account {
+		It 'Throws if user is not logged in' -skip {
+			$TempSession = $Script:Session
+			$Script:Session = $Null
+			{ New-Account } | Should -Throw 'User session not found. Log in with Connect-Lastpass'
+			$Script:Session = $TempSession
+		}
+
 		It 'Sets the account id to 0' -skip {
 			Verify-MockCalled Invoke-RestMethod -ParameterFilter {
 				$URI -eq 'https://lastpass.com/show_website.php' -and
@@ -581,6 +717,11 @@ InModuleScope Lastpass {
 				'Username','Password','Notes' | ForEach {
 					If($Account[$_]){$Account[$_] = ConvertTo-SecureString -A -F $Account[$_]}
 				}
+				If($_.FormFields){
+					$_.FormFields |
+						Where Type -match 'email|tel|text|password|textarea' |
+						ForEach { $_.Value = $_.Value | ConvertTo-SecureString -A -F }
+				}
 			}
 			$Script:PasswordPrompt = [DateTime]::Now
 			$Script:PasswordTimeout = New-TimeSpan -Minutes 2
@@ -593,6 +734,13 @@ InModuleScope Lastpass {
 				Iterations = '1'
 			}
 			$ExpectedAccounts = (Get-Content $ScriptRoot/DecryptedVault.json | ConvertFrom-Json -AsHashTable).Accounts
+		}
+
+		It 'Throws if user is not logged in' {
+			$TempSession = $Script:Session
+			$Script:Session = $Null
+			{ Get-Account } | Should -Throw 'User session not found. Log in with Connect-Lastpass'
+			$Script:Session = $TempSession
 		}
 
 		$Result = Get-Account
@@ -638,12 +786,24 @@ InModuleScope Lastpass {
 			$Result.Notes | Should -Be $Expected.Notes
 		}
 
+		It 'Decrypts and exposes the form fields' {
+			$Result = Get-Account 'Account2'
+			$Expected = $ExpectedAccounts | Where Name -eq 'Account2'
+			$Result.FormFields | Should -Not -BeNullOrEmpty
+			$Result.FormFields | Should -BeOfType "PSCustomObject('Lastpass.FormField')"
+			$Expected.FormFields.Keys | ForEach {
+				$FieldName = $_
+				$Result.FormFields[$_] | Should -Be $Expected.FormFields[$_] -Because $FieldName
+			}
+		}
+
 		It 'Updates the LastAccessed time' {
 			$Result.LastAccessed.DateTime | Should -Be $Now.DateTime
 		}
 
 		It 'Accepts pipeline input' {
 			$Result = 'Account1' | Get-Account
+			$Result | Should -BeOfType "PSCustomObject('Lastpass.Account')"
 			$Result.ID | Should -Be 1835977081662683158
 		}
 
@@ -662,17 +822,11 @@ InModuleScope Lastpass {
 			$Result.Credential.Username | Should -Be $Expected.Username
 			$Result.Credential.GetNetworkCredential().Password | Should -Be $Expected.Password
 		}
-
 	}
 
 	Describe Set-Account {
 
 		Mock Set-Item
-
-		# Just pass account, it passes the properties
-		# If parameter is passed, it overrides the account value
-		# Pipeline
-		# Non-pipeline
 
 		$Account = [PSCustomObject] @{
 			PSTypeName	 = 'Lastpass.Account'
@@ -692,6 +846,13 @@ InModuleScope Lastpass {
 			LaunchCount  = 0
 			Bookmark     = $False
 			Password     = 'fdsafdasfda'
+		}
+
+		It 'Throws if user is not logged in' {
+			$TempSession = $Script:Session
+			$Script:Session = $Null
+			{ $Account | Set-Account } | Should -Throw 'User session not found. Log in with Connect-Lastpass'
+			$Script:Session = $TempSession
 		}
 
 		$Account | Set-Account
@@ -725,15 +886,20 @@ InModuleScope Lastpass {
 				!$DisableAutofill
 			}
 		}
-
-
 	}
 
 	Describe Get-Note {
 
 		BeforeAll {
 			$Script:Blob = Get-Content $ScriptRoot/ParsedVault.json | ConvertFrom-Json -AsHashtable
-			$Script:Blob.SecureNotes | ForEach { $_.Notes = ConvertTo-SecureString -A -F $_.Notes }
+			$Script:Blob.SecureNotes | ForEach {
+				$_.Notes = ConvertTo-SecureString -A -F $_.Notes
+				If($_.Attachments){
+					$_.Attachments | ForEach {
+						$_.FileName = $_.FileName | ConvertTo-SecureString -A -F
+					}
+				}
+			}
 			$Script:Blob.SharedFolders | ForEach { $_.Key = [Byte[]][Char[]] $_.Key }
 			$Script:PasswordPrompt = [DateTime]::Now
 			$Script:PasswordTimeout = New-TimeSpan -Minutes 2
@@ -747,26 +913,29 @@ InModuleScope Lastpass {
 			}
 			$ExpectedNotes = (Get-Content $ScriptRoot/DecryptedVault.json | ConvertFrom-Json).SecureNotes
 		}
-		#Simple test
+
+		It 'Throws if user is not logged in' {
+			$TempSession = $Script:Session
+			$Script:Session = $Null
+			{ Get-Note } | Should -Throw 'User session not found. Log in with Connect-Lastpass'
+			$Script:Session = $TempSession
+		}
+
 		$Result = Get-Note
 
 		It 'Returns a list of all note IDs and names if no name is specified' {
-			$Result.Count | Should -Be 2
-			@(
-				@{ ID = '3365236279341564432'; Name = 'test' }
-				@{ ID = '8526543329769000462'; Name = 'Note In Folder' }
-			) | ForEach {
+			$Result.Count | Should -Be 3
+			$ExpectedNotes | Select ID, Name | ForEach {
 				$Item = $_
 				$Result | Where {
 					$_.ID -eq $Item.ID -and
 					$_.Name -eq $Item.Name
-				} | Should -Not -BeNullOrEmpty
+				} | Should -Not -BeNullOrEmpty -Because $Item.Name
 			}
-
 		}
 
-		$Expected = $ExpectedNotes | Where Name -eq 'test'
-		$Result = Get-Note 'test'
+		$Expected = $ExpectedNotes | Where Name -eq 'Attachment Test'
+		$Result = Get-Note 'Attachment Test'
 		$Now = [DateTime]::Now
 
 		It 'Returns a note by name' {
@@ -781,6 +950,20 @@ InModuleScope Lastpass {
 			$Result.Notes | Should -Be $Expected.Notes
 		}
 
+		It 'Decrypts the Attachment file names' {
+			$Result | Where { $_.Attachments } | ForEach {
+				$Note = $_
+				$ReferenceNote = $ExpectedNotes | Where ID -eq $Note.ID
+				$ReferenceNote | Should -Not -BeNullOrEmpty
+				$_.Attachments | ForEach {
+					$Attachment = $_
+					$ReferenceAttachment = $ReferenceNote.Attachments | Where ID -eq $Attachment.ID
+					$ReferenceAttachment | Should -Not -BeNullOrEmpty
+					$Attachment.FileName | Should -Be $ReferenceAttachment.FileName
+				}
+			}
+		}
+
 		It 'Updates the LastAccessed time' {
 			$Result.LastAccessed.DateTime | Should -Be $Now.DateTime
 		}
@@ -790,22 +973,23 @@ InModuleScope Lastpass {
 		$Expected = $ExpectedNotes | Where Name -eq 'Note In Folder'
 		It 'Prompts for password if note is password protected' {
 			($Script:Blob.SecureNotes |
-				Where Name -eq 'test').PasswordProtect = $True
+				Where Name -eq 'Attachment Test').PasswordProtect = $True
 			Mock Confirm-Password
-			Get-Note 'test'
+			Get-Note 'Attachment Test'
 
 			Assert-MockCalled Confirm-Password
 		}
 
-		It 'Parses custom note properties and exposes them as properties' {
-			'NoteType',
+		It 'Parses custom note properties and exposes them as an ordered hashtable' {
+			$Result.Notes | Should -Not -BeNullOrEmpty
+			$Result.Notes | Should -BeOfType Collections.Specialized.OrderedDictionary
+			$Result.NoteType | Should -Be $Expected.NoteType
+
 			'Hostname',
 			'Username',
 			'Password',
 			'Notes' | ForEach {
-				If($Expected.$_){
-					$Result.Notes.$_ | Should -Be $Expected.$_
-				}
+				$Result.Notes.$_ | Should -Be $Expected.Notes.$_ -Because $_
 			}
 
 		}
@@ -824,6 +1008,13 @@ InModuleScope Lastpass {
 			Favorite     = $False
 			LastModified = [DateTime] '4/3/19 4:58:05 AM'
 			LastAccessed = [DateTime] '4/4/19 1:42:48 AM'
+		}
+
+		It 'Throws if user is not logged in' {
+			$TempSession = $Script:Session
+			$Script:Session = $Null
+			{ $Note | Set-Note } | Should -Throw 'User session not found. Log in with Connect-Lastpass'
+			$Script:Session = $TempSession
 		}
 
 		$Note | Set-Note
@@ -866,6 +1057,117 @@ InModuleScope Lastpass {
 				$Notes -eq "Name:Note`nNoteType:Test`nIP:127.0.0.1`n"
 			}
 		}
+	}
+
+	Describe Get-Attachment {
+
+		Mock Get-Note {
+			$Note = $DecryptedVault.SecureNotes | Where ID -eq 3365236279341564432
+			If($Note.AttachmentKey -is 'String'){
+				$Note.AttachmentKey = $Note.AttachmentKey | ConvertFrom-Hex
+			}
+			$Note.ShareID = 2321
+			$Note
+		}
+		Mock Invoke-RestMethod { Get-Content $ScriptRoot/Attachment }
+		Mock Read-Host {''}
+
+		$AttachmentMetadata = $DecryptedVault.SecureNotes.Attachments |
+			Where ID -eq 3365236279341564432-48085
+		$AttachmentMetadata = [PSCustomObject] @{
+			PSTypeName	= 'Lastpass.Attachment'
+			ID			= $AttachmentMetadata.ID
+			MIMEType	= $AttachmentMetadata.MIMEType
+			StorageKey	= $AttachmentMetadata.StorageKey
+			Size		= $AttachmentMetadata.Size
+			FileName	= $AttachmentMetadata.FileName
+		}
+
+		It 'Throws if user is not logged in' {
+			$TempSession = $Script:Session
+			$Script:Session = $Null
+			{ $AttachmentMetadata | Get-Attachment -FilePath TestDrive:/Attachment.txt } | Should -Throw 'User session not found. Log in with Connect-Lastpass'
+			$Script:Session = $TempSession
+		}
+
+		$R = $AttachmentMetadata | Get-Attachment -FilePath TestDrive:/Attachment.txt
+
+		It 'Appends the share ID if the note is shared' {
+			Assert-MockCalled Invoke-RestMethod -ParameterFilter {
+				$URI -eq 'https://lastpass.com/getattach.php' -and
+				$Body.sharedfolderid -eq '2321'
+			}
+		}
+
+		It 'Downloads the attachment from Lastpass server' {
+			Assert-MockCalled Invoke-RestMethod -ParameterFilter {
+				$URI -eq 'https://lastpass.com/getattach.php' -and
+				$Body.GetAttach -eq '100000048085'
+			}
+		}
+
+		It 'Appends the attachment filename if the specified path is a folder' {
+			$R = $AttachmentMetadata | Get-Attachment -FilePath TestDrive:/
+			$R.FullName | Should -Be ('{0}LPTestFile.txt' -f (Convert-Path TestDrive:/))
+		}
+
+		It 'Returns the file object' {
+			$R | Should -Not -BeNullOrEmpty
+			$R | Should -BeOfType 'System.IO.FileInfo'
+		}
+
+		It 'Saves the file to the specified Path' {
+			$R | Should -Exist
+		}
+
+		It 'Decrypts the attachment' {
+			$Reference = Get-Item $ScriptRoot/DecryptedAttachment.txt
+			$ReferenceHash = $Reference | Get-FileHash
+			($R | Get-FileHash).Hash | Should -Be $ReferenceHash.Hash
+		}
+
+		New-Item -Force TestDrive:/Attachment.txt
+		$R = $AttachmentMetadata | Get-Attachment -FilePath TestDrive:/Attachment.txt
+
+		It 'Prompts the user to overwrite an existing file' {
+			Assert-MockCalled Read-Host
+		}
+
+		It 'Returns if the user chooses not to overwrite the file' {
+			$R | Should -BeNullOrEmpty
+		}
+
+		It 'Does not prompt if -Force is specified' {
+			$R = $AttachmentMetadata | Get-Attachment -FilePath TestDrive:/Attachment.txt -Force
+			Assert-MockCalled Read-Host -Exactly -Times 0 -Scope It
+			$R | Should -Not -BeNullOrEmpty
+			$R | Should -BeOfType 'System.IO.FileInfo'
+		}
+
+		Mock ConvertFrom-LPEncryptedData { Throw 'error' }
+		It 'Throws if an error occurs during attachment decryption' {
+			{ $AttachmentMetadata | Get-Attachment -FilePath TestDrive:\Attachment.txt } |
+				Should -Throw 'Failed to decrypt attachment'
+		}
+
+		Mock Invoke-RestMethod { Throw 'Invalid request' }
+		It 'Throws if an error occurs during attachment download' {
+			{ $AttachmentMetadata | Get-Attachment -FilePath TestDrive:\Attachment.txt } |
+				Should -Throw 'Failed to download attachment from Lastpass server'
+		}
+
+		Mock Get-Note {
+			[PSCustomObject] @{
+				ID = 3365236279341564432
+				Name = 'Missing AttachmentKey'
+				ShareID = 2321
+			}
+		}
+		It 'Throws if it is unable to find the attachment key' {
+			{ $AttachmentMetadata | Get-Attachment -FilePath TestDrive:\Attachment.txt } |
+				Should -Throw 'Unable to find attachment key'
+		}
+
 	}
 
 	Describe New-Password {
@@ -1050,6 +1352,39 @@ InModuleScope Lastpass {
 		It 'Encodes the URL' {
 			Assert-MockCalled Invoke-RestMethod -ParameterFilter {
 				$Body.URL -eq '687474703a2f2f75726c2e636f6d'
+			}
+		}
+		#TODO: Refactor FormFields to be PSCustomObject instead of dict
+		It 'Encodes the form fields' {
+			$FormFields = @(
+				@{ Name = 'email';		Type = 'email'; 		Value = 'email@address.com' }
+				@{ Name = 'phone';		Type = 'tel'; 			Value = '1234567890' }
+				@{ Name = 'username';	Type = 'text'; 			Value = 'test' }
+				@{ Name = 'password';	Type = 'password'; 		Value = 'hardtoguess' }
+				@{ Name = 'feedback';	Type = 'textarea'; 		Value = 'lots of text here' }
+				@{ Name = 'which'; 	 	Type = 'select-one';	Value = 'selected' }
+				@{ Name = 'remember';	Type = 'checkbox';		Checked = $True }
+				@{ Name = 'yes_or_no';	Type = 'radio';			Checked = $False }
+			) | ForEach {
+				$_.PSTypeName = 'Lastpass.FormField'
+				[PSCustomObject] $_
+			}
+
+			$Account | Set-Item -FormFields $FormFields
+			Assert-MockCalled Invoke-RestMethod -Scope It -ParameterFilter {
+				$FormString = (([Char[]] ($Body.Data | ConvertFrom-Hex)) -join '') -split "`n"
+				# $FormString | Write-Host
+				$URI -eq 'https://lastpass.com/show_website.php' -and
+				$FormString[0] -match "0`temail`temail`t" -and
+				$FormString[1] -match "0`tphone`ttel`t" -and
+				$FormString[2] -match "0`tusername`ttext`t" -and
+				$FormString[3] -match "0`tpassword`tpassword`t" -and
+				$FormString[4] -match "0`tfeedback`ttextarea`t" -and
+				$FormString[5] -match "0`twhich`tselect-one`tselected" -and
+				$FormString[6] -match "0`tremember`tcheckbox`t-1" -and
+				$FormString[7] -match "0`tyes_or_no`tradio`t-0" -and
+				$FormString[8] -match "0`taction`t`taction" -and
+				$FormString[9] -match "0`tmethod`t`tmethod"
 			}
 		}
 
