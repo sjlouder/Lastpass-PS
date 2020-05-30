@@ -597,10 +597,7 @@ InModuleScope Lastpass {
 				$Folder.Keys | Where { $_ -notin 'PSTypeName' } | ForEach {
 					# Write-Host $_
 					# Write-Host $Folder.$_
-					If($_ -eq 'Name'){
-						$Folder.$_ | Should -Be $Reference.Folder
-					}
-					ElseIf($Folder.$_ -is [DateTime]){
+					If($Folder.$_ -is [DateTime]){
 						$Folder.$_.DateTime | Should -Be ($Epoch.AddSeconds([Int]$Reference.$_).DateTime)
 					}Else{ $Folder.$_ | Should -Be $Reference.$_ -Because $_ }
 				}

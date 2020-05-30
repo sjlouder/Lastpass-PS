@@ -45,6 +45,7 @@ Try{
 	Start-Sleep 10 # Webdriver wait
 	#TODO: MFA id Fyubikey
 
+	Write-Verbose 'Getting Data'
 	$Version = $Driver.ExecuteScript('return g_server_accts_version')
 
 	$Accounts = $Driver.ExecuteScript('return JSON.stringify(g_sites)') |
@@ -80,67 +81,58 @@ $Parsed = @{
 }
 
 $Accounts.Values | ForEach {
-	If($_.url -eq 'http://group'){
-		$Folder = [Ordered] @{
-			ID = $_.aid
-			Name = $_.name
-			FIID = $_.fiid
-			DateCreated = $_.created_gmt
-			LastAccessed = $_.last_touch
-			LastModifiedGMT = $_.last_modified_gmt
-			LastPasswordChange = $_.last_pwchange_gmt
-		}
-		If($_.sharedfromaid){ $Folder.ShareID = $_.sharedfromaid }
-		$Attachments | Where Parent -eq $Folder.ID | ForEach {
-			If(!$Folder.Attachments){ $Folder.Attachments = @() }
-			$Folder.Attachments += [Ordered] @{
-				ID = $_.id
-				Parent = $_.parent
-				MIMEType = $_.mimetype
-				StorageKey = $_.storagekey
-				Size = $_.size
-				FileName = $_.filename
+	If($_.url -eq 'http://group'){ # is a folder
+		If($_.created_gmt){ # is not a share
+			$Folder = [Ordered] @{
+				ID = $_.aid
+				Name = $_.group
+				FIID = $_.fiid
+				DateCreated = $_.created_gmt
+				LastAccessed = $_.last_touch
+				LastModifiedGMT = $_.last_modified_gmt
+				LastPasswordChange = $_.last_pwchange_gmt
 			}
+			If($_.sharefolderid){ $Folder.ShareID = $_.sharefolderid }
+			$Parsed.Folders += $Folder
 		}
-		$Parsed.Folders += $Folder
 	}
 	Else {
 		$Account = [Ordered] @{
 			ID = $_.aid
 			Name = $_.name
-			Folder = $_.group
-			URL = $_.url
-			Notes = $_.extra
-			Favorite = $_.fav
+			Folder = $_.group ? $_.group : $Null
+			URL = $_.url ? $_.url : $Null
+			Notes = $_.extra ? $_.extra : $Null
+			Favorite = !![Int] $_.fav
 			Username = $_.username
-			Password = $_.password
-			PasswordProtect = $_.pwprotect
-			generatedpassword = $_.genpw
-			securenote = $_.sn
+			Password = $_.password ? $_.password : $Null
+			PasswordProtect = !![Int] $_.pwprotect
+			generatedpassword = !![Int] $_.genpw
+			securenote = !![Int] $_.sn
 			LastAccessed = $_.last_touch
-			AutoLogin = $_.autologin
-			NeverAutofill = $_.never_autofill
-			realmdata = $_.realm_data
+			AutoLogin = !![Int] $_.autologin
+			NeverAutofill = !![Int] $_.never_autofill
+			realmdata = $_.realm_data ? $_.realm_data : $Null
 			FIID = $_.fiid
-			customjs = $_.custom_js
-			submitid = $_.submit_id
-			captchaid = $_.captcha_id
+			customjs = $_.custom_js ? $_.custom_js : $Null
+			submitid = $_.submit_id ? $_.submit_id : $Null
+			captchaid = $_.captcha_id ? $_.captcha_id : $Null
 			URID = $_.urid
-			Method = $_.method
-			Action = $_.action
-			BasicAuth = $_.basic_auth
-			GroupID = $_.groupid
-			deleted = $_.deleted
-			AttachmentKey = $_.attachkey
-			attachmentpresent = $_.attachpresent
-			IndividualShare = $_.individualshare
-			NoteType = $_.notetype
-			NoAlert = $_.noalert
+			Method = $_.method ? $_.method : $Null
+			Action = $_.action ? $_.action : $Null
+			BasicAuth = !![Int] $_.basic_auth
+			GroupID = $_.groupid ? $_.groupid : $Null
+			deleted = !![Int] $_.deleted
+			AttachmentKey = $_.attachkey ? $_.attachkey : $Null
+			attachmentpresent = !![Int] $_.attachpresent
+			IndividualShare = !![Int] $_.individualshare
+			NoteType = $_.notetype ? $_.notetype : $Null
+			NoAlert = $_.noalert ? $_.noalert : $Null
 			lastmodifiedgmt = $_.last_modified_gmt
-			HasBeenShared = $_.hasbeenshared
+			HasBeenShared = !![Int] $_.hasbeenshared
 			lastpasswordchange = $_.last_pwchange_gmt
 			DateCreated = $_.created_gmt
-			Vulnerable = $_.vulnerable
+			Vulnerable = $_.vulnerable ? $_.vulnerable : $Null
 		}
 		If($_.sharefolderid){ $Account.ShareID = $_.sharefolderid }
 		If($_.fields){
@@ -148,14 +140,14 @@ $Accounts.Values | ForEach {
 			$_.fields | ForEach {
 				$Account.FormFields += [Ordered] @{
 					Name = $_.name
-					Checked = $_.checked
-					FormName = $_.formname
-					OtherField = $_.otherfield
+					Checked = !![Int] $_.checked
+					FormName = $_.formname ? $_.formname : $Null
+					OtherField = !![Int] $_.otherfield
 					OtherLogin = $_.otherlogin
 					Type = $_.type
 					URID = $_.urid
-					URL = $_.url
-					Value = $_.value
+					URL = $_.url ? $_.url : $Null
+					Value = $_.value ? $_.value : $Null
 				}
 			}
 		}
@@ -167,15 +159,15 @@ $SecureNotes.Values | ForEach {
 	$Note = [Ordered] @{
 		ID = $_.aid
 		Name = $_.name
-		Folder = $_.group
-		NoteType = $_.notetype
-		Notes = $_.extra
-		AttachmentPresent = $_.attachpresent
-		AttachmentKey = $_.attachkey
-		PasswordProtect = $_.pwprotect
-		Favorite = $_.fav
-		Deleted = $_.deleted
-		HasBeenShared = $_.hasbeenshared
+		Folder = $_.group ? $_.group : $Null
+		NoteType = $_.notetype ? $_.notetype : $Null
+		Notes = $_.extra ? $_.extra : $Null
+		AttachmentPresent = !![Int] $_.attachpresent
+		AttachmentKey = $_.attachkey ? $_.attachkey : $Null
+		PasswordProtect = !![Int] $_.pwprotect
+		Favorite = !![Int] $_.fav
+		Deleted = !![Int] $_.deleted
+		HasBeenShared = !![Int] $_.hasbeenshared
 		FIID = $_.fiid
 		DateCreated = $_.created_gmt
 		LastAccessed = $_.last_touch
@@ -183,7 +175,17 @@ $SecureNotes.Values | ForEach {
 		LastPasswordChange = $_.last_pwchange_gmt
 	}
 	If($_.sharefolderid){ $Note.ShareID = $_.sharefolderid }
-
+	$Attachments | Where Parent -eq $Note.ID | ForEach {
+		If(!$Note.Attachments){ $Note.Attachments = @() }
+		$Note.Attachments += [Ordered] @{
+			ID = $_.id
+			Parent = $_.parent
+			MIMEType = $_.mimetype
+			StorageKey = $_.storagekey
+			Size = $_.size
+			FileName = $_.filename
+		}
+	}
 	$Parsed.SecureNotes += $Note
 
 }
@@ -193,10 +195,11 @@ $Shares | ForEach {
 	$Parsed.SharedFolders += [Ordered] @{
 		ID = $_.id
 		RSAEncryptedFolderKey = $_.sharekey
-		Name = $_.name
-		ReadOnly = $_.readonly
-		Give = $_.give
+		Name = $_.decsharename
+		ReadOnly = !![Int] $_.readonly
+		Give = !![Int] $_.give
 		AESFolderKey = $_.sharekeyaes
+		Key = $_.key
 	}
 }
 
