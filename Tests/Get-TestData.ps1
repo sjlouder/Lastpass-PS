@@ -17,8 +17,14 @@ The path of the output json file
 [CmdletBinding()]
 Param(
 	[PSCredential] $Credential,
-	[String] $Path
+	[Switch] $Visible
 )
+
+
+#TODO: Download blob
+# It does not seem to get stored in javascript, so need to call manually
+# Maybe: scrape session details for API call? Call may work in session as is
+# 
 
 # https://www.selenium.dev/documentation/en/
 # https://developer.mozilla.org/en-US/docs/Mozilla/Firefox/Headless_mode
@@ -29,7 +35,7 @@ Param(
 Add-Type -Path $PSScriptRoot/WebDriver.dll
 
 $Options = [OpenQA.Selenium.Firefox.FirefoxOptions]::New()
-#$Options.AddArguments('-headless')
+If(!$Visible){ $Options.AddArguments('-headless') }
 
 Write-Verbose 'Starting browser'
 $Driver = [OpenQA.Selenium.Firefox.FirefoxDriver]::New($Options)
@@ -60,7 +66,13 @@ Try{
 	$Shares = $Driver.ExecuteScript('return JSON.stringify(g_shares)') |
 		ConvertFrom-JSON -AsHashTable
 
-
+	$Driver.ExecuteScript("return $.ajax({
+		type: 'GET',
+		url: base_url + 'getaccts.php',
+		data: 'mobile=1&b64=1&requestsrc=cli&hasplugin=3.0.23',
+		success: function (a) {return a}})") | Out-File $PSScriptRoot/Vault
+		# dataType: 'text',
+	# $Blob | Out-File $PSScriptRoot/Vault
 	# Get decrypted values from DOM
 	# Maybe: get blob, use vault.js to parse/decrypt items
 
@@ -204,4 +216,4 @@ $Shares | ForEach {
 }
 
 
-$Parsed | ConvertTo-Json -Depth 10 | Out-File $Path
+$Parsed | ConvertTo-Json -Depth 10 | Out-File $PSScriptRoot/ParsedVault.json
