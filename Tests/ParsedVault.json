@@ -342,7 +342,25 @@
       "DateCreated": "1565839469",
       "LastAccessed": "1587881198",
       "LastModifiedGMT": "1587881198",
-      "LastPasswordChange": "1565844743"
+      "LastPasswordChange": "1565844743",
+      "Attachments": [
+        {
+          "ID": "3365236279341564432-48085",
+          "Parent": "3365236279341564432",
+          "MIMEType": "other:txt",
+          "StorageKey": "100000048085",
+          "Size": "262",
+          "FileName": "!655OkzaDIUk7sfUBCRasJA==|puJf4gVaBJZNkC7zh9qkRA=="
+        },
+        {
+          "ID": "3365236279341564432-23672",
+          "Parent": "3365236279341564432",
+          "MIMEType": "other:zip",
+          "StorageKey": "100000023672",
+          "Size": "390",
+          "FileName": "!H6woYhsPuamDllGUm2RiHQ==|g4JEmEWVXCnlISW9oONg1x7wGGRHlzj/yVZhlgZ/vN0="
+        }
+      ]
     },
     {
       "ID": "5138672986418253689",
