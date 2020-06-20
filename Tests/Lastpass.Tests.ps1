@@ -543,7 +543,7 @@ InModuleScope Lastpass {
 						)
 					} | ForEach {
 						If($Account.$_ -is [DateTime]){
-							#$Account.$_.DateTime | Should -Be ($Epoch.AddSeconds([Int]$Reference.$_).DateTime)
+							$Account.$_.DateTime | Should -Be ($Epoch.AddSeconds([Int]$Reference.$_).DateTime)
 						}Else{ $Account.$_ | Should -Be $Reference.$_ -Because $_}
 					}
 			}
@@ -1057,6 +1057,31 @@ InModuleScope Lastpass {
 	}
 
 	Describe Get-Attachment {
+		
+		BeforeAll {
+			$Script:Blob = Get-Content $ScriptRoot/ParsedVault.json | ConvertFrom-Json -AsHashtable
+			$Script:Blob.SecureNotes | ForEach {
+				$_.Notes = ConvertTo-SecureString -A -F $_.Notes
+				If($_.Attachments){
+					$_.Attachments | ForEach {
+						$_.FileName = $_.FileName | ConvertTo-SecureString -A -F
+					}
+				}
+			}
+			$Script:Blob.SharedFolders | ForEach { $_.Key = [Byte[]][Char[]] $_.Key }
+			$Script:PasswordPrompt = [DateTime]::Now
+			$Script:PasswordTimeout = New-TimeSpan -Minutes 2
+			$Script:Session = [PSCustomObject] @{
+				Key = [Byte[]] @(
+					160,143,117,193,122,157,146,7,23,206,62,167,167,182,117,117,
+					60,118,172,154,146,119,36,238,73,80,241,107,95,3,40,236
+				)
+				Username = 'Username'
+				Iterations = '1'
+			}
+			$ExpectedNotes = (Get-Content $ScriptRoot/DecryptedVault.json | ConvertFrom-Json).SecureNotes
+		}
+
 
 		Mock Get-Note {
 			$Note = $DecryptedVault.SecureNotes | Where ID -eq 3365236279341564432
@@ -1089,7 +1114,7 @@ InModuleScope Lastpass {
 
 		$R = $AttachmentMetadata | Get-Attachment -FilePath TestDrive:/Attachment.txt
 
-		It 'Appends the share ID if the note is shared' {
+		It 'Appends the share ID to the api parameters if the note is shared' {
 			Assert-MockCalled Invoke-RestMethod -ParameterFilter {
 				$URI -eq 'https://lastpass.com/getattach.php' -and
 				$Body.sharedfolderid -eq '2321'

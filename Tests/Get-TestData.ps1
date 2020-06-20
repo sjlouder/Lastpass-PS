@@ -262,6 +262,23 @@ Try{
 			$Script = ('return lpmdec({0}, !0{1})' -f ($Note.Notes | ConvertTo-Json), $Key)
 			Write-Debug "Notes script : $Script"
 			$Note.Notes = $Driver.ExecuteScript($Script)
+			If($Note.NoteType){
+				#TODO parse custom notes into object
+				# code in getKeyValuePairs(), but not able to call it from the window scope
+				$Notes = [Ordered] @{}
+				$CurrentKey = ''
+				# First line is notetype, second is language
+				$Note.Notes -split "`n" | Select -Skip 2 | ForEach {
+					$Key, $Value = $_ -split ':'
+					If($Value){
+						$Notes[$Key] = $Value
+						$CurrentKey = $Key
+						Write-Verbose "New Key: $Key	"
+					}
+					Else{ $Notes[$CurrentKey] += "`n$Key" }
+				}
+				$Note.Notes = $Notes
+			}
 		}
 		If($Note.AttachmentKey){
 			# This might not work for shared notes
@@ -274,9 +291,9 @@ Try{
 		If($Note.Attachments){
 			$Key = ', lphex2bin_u("{0}")' -f $Note.AttachmentKey
 			$Note.Attachments | ForEach {
-				$Script = 'return lpmdec({0}, !1{1})' -f ($_.Filename | ConvertTo-JSON), $Key
+				$Script = 'return lpmdec({0}, !1{1})' -f ($_.FileName | ConvertTo-JSON), $Key
 				Write-Debug "Attachment Filename script: $Script"
-				$_.Filename = $Driver.ExecuteScript($Script)
+				$_.FileName = $Driver.ExecuteScript($Script)
 			}
 		}
 		$Note | Out-String | Write-Verbose

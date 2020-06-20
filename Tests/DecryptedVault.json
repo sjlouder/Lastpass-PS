@@ -1,5 +1,4 @@
 {
-  "Version": "121",
   "SharedFolders": [
     {
       "ID": "259212291",
@@ -97,6 +96,44 @@
       "Vulnerable": null
     },
     {
+      "ID": "6274670822055333050",
+      "Name": "TestName#$/3",
+      "Folder": "Shared-Share2",
+      "URL": "https://URL/ThisisTheUsername",
+      "Notes": "Here are the notes",
+      "Favorite": false,
+      "Username": "UsernameHere",
+      "Password": null,
+      "PasswordProtect": false,
+      "generatedpassword": false,
+      "securenote": false,
+      "LastAccessed": "0",
+      "AutoLogin": false,
+      "NeverAutofill": false,
+      "realmdata": null,
+      "FIID": "6274670822055333050",
+      "customjs": null,
+      "submitid": null,
+      "captchaid": null,
+      "URID": "0",
+      "Method": null,
+      "Action": null,
+      "BasicAuth": false,
+      "GroupID": null,
+      "deleted": false,
+      "AttachmentKey": null,
+      "attachmentpresent": false,
+      "IndividualShare": false,
+      "NoteType": null,
+      "NoAlert": null,
+      "lastmodifiedgmt": "1565839386",
+      "HasBeenShared": false,
+      "lastpasswordchange": "1565839386",
+      "DateCreated": "1565839386",
+      "Vulnerable": null,
+      "ShareID": "259213521"
+    },
+    {
       "ID": "5148901049320353252",
       "Name": "Account2",
       "Folder": "ParentFolder\\SubFolder",
@@ -191,44 +228,6 @@
       ]
     },
     {
-      "ID": "6274670822055333050",
-      "Name": "TestName#$/3",
-      "Folder": "Shared-Share2",
-      "URL": "https://URL/ThisisTheUsername",
-      "Notes": "Here are the notes",
-      "Favorite": false,
-      "Username": "UsernameHere",
-      "Password": null,
-      "PasswordProtect": false,
-      "generatedpassword": false,
-      "securenote": false,
-      "LastAccessed": "0",
-      "AutoLogin": false,
-      "NeverAutofill": false,
-      "realmdata": null,
-      "FIID": "6274670822055333050",
-      "customjs": null,
-      "submitid": null,
-      "captchaid": null,
-      "URID": "0",
-      "Method": null,
-      "Action": null,
-      "BasicAuth": false,
-      "GroupID": null,
-      "deleted": false,
-      "AttachmentKey": null,
-      "attachmentpresent": false,
-      "IndividualShare": false,
-      "NoteType": null,
-      "NoAlert": null,
-      "lastmodifiedgmt": "1565839386",
-      "HasBeenShared": false,
-      "lastpasswordchange": "1565839386",
-      "DateCreated": "1565839386",
-      "Vulnerable": null,
-      "ShareID": "259213521"
-    },
-    {
       "ID": "3656362581793908418",
       "Name": "SiteShareTest",
       "Folder": "(Accepted Share Offers)",
@@ -266,53 +265,18 @@
       "Vulnerable": null
     }
   ],
-  "Folders": [
-    {
-      "ID": "3495922906477418973",
-      "Name": "ParentFolder\\SubFolder",
-      "FIID": "3495922906477418973",
-      "DateCreated": "1553657357",
-      "LastAccessed": "0",
-      "LastModifiedGMT": "1565844173",
-      "LastPasswordChange": "1553657357"
-    },
-    {
-      "ID": "2831157938603926469",
-      "Name": "Shared-Share2",
-      "FIID": "2831157938603926469",
-      "DateCreated": "1565839063",
-      "LastAccessed": "0",
-      "LastModifiedGMT": "1565839063",
-      "LastPasswordChange": "1565839063",
-      "ShareID": "259213521"
-    },
-    {
-      "ID": "2119448880166249263",
-      "Name": "ParentFolder",
-      "FIID": "2119448880166249263",
-      "DateCreated": "1565844126",
-      "LastAccessed": "0",
-      "LastModifiedGMT": "1565844126",
-      "LastPasswordChange": "1565844126"
-    },
-    {
-      "ID": "5529670392262189424",
-      "Name": "Shared-Share\\SubShare",
-      "FIID": "5529670392262189424",
-      "DateCreated": "1565839143",
-      "LastAccessed": "0",
-      "LastModifiedGMT": "1565839143",
-      "LastPasswordChange": "1565839143",
-      "ShareID": "259212291"
-    }
-  ],
   "SecureNotes": [
     {
       "ID": "8526543329769000462",
       "Name": "Note In Folder",
       "Folder": "Shared-Share2",
       "NoteType": "Server",
-      "Notes": "NoteType:Server\nLanguage:en-US\nHostname:Server Note\nUsername:TestUsername\nPassword:SuperSecurePassword\nNotes:Abitrary notes of the secure note\nSecond Line of note\n\nFinally...\n\\n\n",
+      "Notes": {
+        "Hostname": "Server Note",
+        "Username": "TestUsername",
+        "Password": "SuperSecurePassword",
+        "Notes": "Abitrary notes of the secure note\nSecond Line of note\n\nFinally...\n\\n\n"
+      },
       "AttachmentPresent": false,
       "AttachmentKey": null,
       "PasswordProtect": true,
@@ -325,6 +289,29 @@
       "LastModifiedGMT": "1567654071",
       "LastPasswordChange": "1565839063",
       "ShareID": "259213521"
+    },
+    {
+      "ID": "5138672986418253689",
+      "Name": "Note Test",
+      "Folder": null,
+      "NoteType": "Generic",
+      "Notes": {
+        "Hostname": "Server Note",
+        "Username": "TestUsername",
+        "Password": "SuperSecurePassword",
+        "Notes": "Abitrary"
+      },
+      "AttachmentPresent": false,
+      "AttachmentKey": null,
+      "PasswordProtect": false,
+      "Favorite": false,
+      "Deleted": false,
+      "HasBeenShared": false,
+      "FIID": "5138672986418253689",
+      "DateCreated": "1567654805",
+      "LastAccessed": "1567655226",
+      "LastModifiedGMT": "1567655226",
+      "LastPasswordChange": "1567654805"
     },
     {
       "ID": "3365236279341564432",
@@ -350,7 +337,7 @@
           "MIMEType": "other:txt",
           "StorageKey": "100000048085",
           "Size": "262",
-          "Filename": "LPTestFile.txt"
+          "FileName": "LPTestFile.txt"
         },
         {
           "ID": "3365236279341564432-23672",
@@ -358,27 +345,50 @@
           "MIMEType": "other:zip",
           "StorageKey": "100000023672",
           "Size": "390",
-          "Filename": "LPTestArchive.zip"
+          "FileName": "LPTestArchive.zip"
         }
       ]
+    }
+  ],
+  "Version": "121",
+  "Folders": [
+    {
+      "ID": "5529670392262189424",
+      "Name": "Shared-Share\\SubShare",
+      "FIID": "5529670392262189424",
+      "DateCreated": "1565839143",
+      "LastAccessed": "0",
+      "LastModifiedGMT": "1565839143",
+      "LastPasswordChange": "1565839143",
+      "ShareID": "259212291"
     },
     {
-      "ID": "5138672986418253689",
-      "Name": "Note Test",
-      "Folder": null,
-      "NoteType": "Generic",
-      "Notes": "NoteType:Server\nLanguage:en-US\nHostname:Server Note\nUsername:TestUsername\nPassword:SuperSecurePassword\nNotes:Abitrary",
-      "AttachmentPresent": false,
-      "AttachmentKey": null,
-      "PasswordProtect": false,
-      "Favorite": false,
-      "Deleted": false,
-      "HasBeenShared": false,
-      "FIID": "5138672986418253689",
-      "DateCreated": "1567654805",
-      "LastAccessed": "1567655226",
-      "LastModifiedGMT": "1567655226",
-      "LastPasswordChange": "1567654805"
+      "ID": "2119448880166249263",
+      "Name": "ParentFolder",
+      "FIID": "2119448880166249263",
+      "DateCreated": "1565844126",
+      "LastAccessed": "0",
+      "LastModifiedGMT": "1565844126",
+      "LastPasswordChange": "1565844126"
+    },
+    {
+      "ID": "2831157938603926469",
+      "Name": "Shared-Share2",
+      "FIID": "2831157938603926469",
+      "DateCreated": "1565839063",
+      "LastAccessed": "0",
+      "LastModifiedGMT": "1565839063",
+      "LastPasswordChange": "1565839063",
+      "ShareID": "259213521"
+    },
+    {
+      "ID": "3495922906477418973",
+      "Name": "ParentFolder\\SubFolder",
+      "FIID": "3495922906477418973",
+      "DateCreated": "1553657357",
+      "LastAccessed": "0",
+      "LastModifiedGMT": "1565844173",
+      "LastPasswordChange": "1553657357"
     }
   ]
 }
