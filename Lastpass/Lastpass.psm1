@@ -64,7 +64,7 @@ $Script:Schema = @{
 			SubmitID = 'Skip' #?
 			CaptchaID = 'Skip' #?
 			URID = 'Skip' #?
-			BasicAuth = 'Skip' #?
+			BasicAuth = 'Boolean' #?
 			Method = 'Skip' #?
 			Action = 'Skip'
 			GroupID = 'String' #?
@@ -156,7 +156,7 @@ $Script:Schema = @{
 			RSAEncryptedFolderKey = 'Hex'
 			Name = 'String'
 			ReadOnly = 'Boolean'
-			Give = 'Int' #Not sure what this is
+			Give = 'Boolean' #?
 			AESFolderKey = 'String'
 		}
 		DefaultFields = @(
