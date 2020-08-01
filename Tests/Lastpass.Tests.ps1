@@ -1,5 +1,4 @@
 Import-Module -Force $PSScriptRoot/../Lastpass -ArgumentList @{ Debug = $True } -Verbose:$False
-
 InModuleScope Lastpass {
 
 	$ScriptRoot = $PSScriptRoot
@@ -9,7 +8,9 @@ InModuleScope Lastpass {
 	$Script:DecryptedVault = Get-Content $ScriptRoot/DecryptedVault.json | ConvertFrom-JSON -AsHashtable
 
 	# Make sure no tests actually reach out to the internet
-	Mock Invoke-RestMethod
+	Mock Invoke-RestMethod {}
+	# Invoke-RestMethod ipinfo.io/json | Write-Host
+	# exit
 
 	Describe Connect-Lastpass {
 
@@ -523,7 +524,7 @@ InModuleScope Lastpass {
 		}
 
 		It 'Parses the accounts' {
-			$Blob.Accounts.Length | Should -Be 5
+			$Blob.Accounts.Length | Should -Be $Expected.Accounts.Count
 			$Expected.Accounts | ForEach {
 				$Reference = $_
 				$Account = ($Blob.Accounts | Where ID -eq $Reference.ID)
@@ -561,7 +562,7 @@ InModuleScope Lastpass {
 		}
 
 		It 'Parses the secure notes' {
-			$Blob.SecureNotes.Length | Should -Be 3
+			$Blob.SecureNotes.Length | Should -Be $Expected.SecureNotes.Count
 			$Expected.SecureNotes | ForEach {
 				$Reference = $_
 				$Note = ($Blob.SecureNotes | Where ID -eq $Reference.ID)
@@ -743,7 +744,7 @@ InModuleScope Lastpass {
 		$Result = Get-Account
 
 		It 'Returns all accounts if no account name is specified' {
-			$Result.Count | Should -Be 5
+			$Result.Count | Should -Be $ExpectedAccounts.Count
 			@(
 				@{ ID = '1835977081662683158'; Name = 'Account1' }
 				@{ ID = '5148901049320353252'; Name = 'Account2' }
@@ -818,6 +819,12 @@ InModuleScope Lastpass {
 			$Result.Credential | Should -BeOfType PSCredential
 			$Result.Credential.Username | Should -Be $Expected.Username
 			$Result.Credential.GetNetworkCredential().Password | Should -Be $Expected.Password
+		}
+
+		It 'Filters out duplicate accounts with the same name' {
+			$ExpectedCount = ($ExpectedAccounts | Where Name -eq 'Duplicate Name').Count
+			$Result = Get-Account 'Duplicate Name' | Get-Account
+			$Result.Count | Should -Be $ExpectedCount
 		}
 	}
 
@@ -921,7 +928,7 @@ InModuleScope Lastpass {
 		$Result = Get-Note
 
 		It 'Returns a list of all note IDs and names if no name is specified' {
-			$Result.Count | Should -Be 3
+			$Result.Count | Should -Be $ExpectedNotes.Count
 			$ExpectedNotes | Select ID, Name | ForEach {
 				$Item = $_
 				$Result | Where {
@@ -990,6 +997,13 @@ InModuleScope Lastpass {
 			}
 
 		}
+
+		It 'Filters out duplicate notes with the same name' {
+			$ExpectedCount = ($ExpectedNotes | ? Name -eq 'Duplicate Note').Count
+			$Result = Get-Note 'Duplicate Note' | Get-Note
+			$Result.Count | Should -Be $ExpectedCount
+		}
+
 	}
 
 	Describe Set-Note {
@@ -1057,7 +1071,7 @@ InModuleScope Lastpass {
 	}
 
 	Describe Get-Attachment {
-		
+
 		BeforeAll {
 			$Script:Blob = Get-Content $ScriptRoot/ParsedVault.json | ConvertFrom-Json -AsHashtable
 			$Script:Blob.SecureNotes | ForEach {
