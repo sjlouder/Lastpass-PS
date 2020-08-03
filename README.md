@@ -1,7 +1,7 @@
 # Lastpass-PS
 Lastpass Powershell Module
 
-[![Build Status](https://dev.azure.com/sacrificialarts/sacrificialarts/_apis/build/status/sjlouder.Lastpass-PS?branchName=master)](https://dev.azure.com/sacrificialarts/sacrificialarts/_build/latest?definitionId=1&branchName=master)
+[![Build Status](https://dev.azure.com/sjlouder/Lastpass-PS/_apis/build/status/CI?branchName=master)](https://dev.azure.com/sjlouder/Lastpass-PS/_build/latest?definitionId=1&branchName=master)
 
 # DESCRIPTION
 Powershell module to interact with Lastpass.
