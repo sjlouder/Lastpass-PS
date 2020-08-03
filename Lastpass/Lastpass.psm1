@@ -793,12 +793,13 @@ Function Get-Account {
 
 	BEGIN {
 		If(!$Script:Session){ Throw 'User session not found. Log in with Connect-Lastpass' }
+		$IDs = @()
 	}
 
 	PROCESS {
 		If(!$Name){ Return $Script:Blob.Accounts | Select ID, Name }
 		$Name | ForEach {
-			$Script:Blob.Accounts | Where Name -eq $_ | ForEach {
+			$Script:Blob.Accounts | Where Name -eq $_ | Where ID -NotIn $IDs | ForEach {
 				If($_.PasswordProtect){ Confirm-Password }
 
 				$Account = @{}
@@ -848,6 +849,7 @@ Function Get-Account {
 
 				$Account.LastAccessed = [DateTime]::Now
 				[PSCustomObject] $Account | Write-Output
+				$IDs += $Account.ID
 			}
 		}
 	}
@@ -1006,11 +1008,12 @@ Function Get-Note {
 	)
 	BEGIN {
 		If(!$Script:Session){ Throw 'User session not found. Log in with Connect-Lastpass' }
+		$IDs = @()
 	}
 	PROCESS {
 		If(!$Name){ Return $Script:Blob.SecureNotes | Select ID, Name }
 		$Name | ForEach {
-			$Script:Blob.SecureNotes | Where Name -eq $_ | ForEach {
+			$Script:Blob.SecureNotes | Where Name -eq $_ | Where ID -NotIn $IDs | ForEach {
 				If($_.PasswordProtect){ Confirm-Password }
 
 				$Note = @{}
@@ -1065,6 +1068,7 @@ Function Get-Note {
 				}
 				$Note.LastAccessed = [DateTime]::Now
 				[PSCustomObject] $Note | Write-Output
+				$IDs += $Note.ID
 			}
 		}
 	}
