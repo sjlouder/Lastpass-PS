@@ -46,11 +46,11 @@ jobs:
 
   - powershell: Install-Module Pester -Force -Scope CurrentUser -MaximumVersion 4.9 -PassThru
     displayName: (Windows Powershell) Installing Pester
-    name: Dependencies
+    name: (Windows Powershell) Dependencies
 
   - powershell: Invoke-Pester -OutputFormat NUnitXML -OutputFile $(Build.ArtifactStagingDirectory)/WindowsPS.Tests.XML
     displayName: (Windows Powershell) Running tests
-    name: Tests
+    name: (Windows Powershell) Tests
 
   - task: PublishTestResults@2
     inputs:
