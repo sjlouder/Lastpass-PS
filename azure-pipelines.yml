@@ -22,7 +22,7 @@ jobs:
   - task: PublishTestResults@2
     inputs:
       testResultsFormat: NUnit
-      testResultsFiles: $(Build.ArtifactStagingDirectory)/Tests.XML
+      testResultsFiles: $(Build.ArtifactStagingDirectory)/Linux.Tests.XML
       failTaskOnFailedTests: true
 
 - job: Windows
