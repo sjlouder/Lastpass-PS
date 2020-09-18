@@ -58,7 +58,7 @@ jobs:
       testResultsFiles: $(Build.ArtifactStagingDirectory)/WindowsPS.Tests.XML
       failTaskOnFailedTests: true
 
-- job: MacOS X
+- job: MacOSX
   pool:
     vmImage: 'MacOS-Latest'
 
