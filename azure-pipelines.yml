@@ -45,11 +45,11 @@ jobs:
       failTaskOnFailedTests: true
 
   - powershell: Install-Module Pester -Force -Scope CurrentUser -MaximumVersion 4.9 -PassThru
-    displayName: [Windows Powershell] Installing Pester
+    displayName: (Windows Powershell) Installing Pester
     name: Dependencies
 
   - powershell: Invoke-Pester -OutputFormat NUnitXML -OutputFile $(Build.ArtifactStagingDirectory)/WindowsPS.Tests.XML
-    displayName: [Windows Powershell] Running tests
+    displayName: (Windows Powershell) Running tests
     name: Tests
 
   - task: PublishTestResults@2
