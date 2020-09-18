@@ -1811,3 +1811,28 @@ Describe 'TypeData' {
 		}
 	}
 }
+
+
+Describe 'Publishing' {
+	BeforeAll {
+		$Repo = (New-Item -ItemType Directory TestDrive:/PSRepo).PSPath
+
+		$Param = @{
+			Name = 'PesterRepo'
+			SourceLocation = $Repo
+			InstallationPolicy = 'Trusted'
+			PackageManagementProvider = 'NuGet'
+		}
+		Register-PSRepository @Param -Verbose:$False
+	}
+
+	It 'can be published locally using Publish-Module' {
+		Publish-Module -Repository PesterRepo -Path $PSScriptRoot/../Lastpass -Verbose:$False -EA Stop
+		Find-Module Lastpass -Repository PesterRepo -Verbose:$False | Should -Not -BeNullOrEmpty
+	}
+
+	AfterAll {
+		Unregister-PSrepository -Name $Param.Name -Verbose:$False
+		Remove-Item -Force -Recurse TestDrive:/PSRepo -EA Silent
+	}
+}
