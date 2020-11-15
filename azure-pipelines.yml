@@ -47,19 +47,19 @@ jobs:
   - powershell: Install-Module Pester -Force -Scope CurrentUser -MaximumVersion 4.9 -PassThru
     displayName: (Windows Powershell) Installing Pester
     name: WinPS_Dependencies
-    enabled: true
+    enabled: false
 
   - powershell: Invoke-Pester -OutputFormat NUnitXML -OutputFile $(Build.ArtifactStagingDirectory)/WindowsPS.Tests.XML
     displayName: (Windows Powershell) Running tests
     name: WinPS_Tests
-    enabled: true
+    enabled: false
 
   - task: PublishTestResults@2
     inputs:
       testResultsFormat: NUnit
       testResultsFiles: $(Build.ArtifactStagingDirectory)/WindowsPS.Tests.XML
       failTaskOnFailedTests: true
-    enabled: true
+    enabled: false
 
 - job: MacOSX
   pool:
