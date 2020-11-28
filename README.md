@@ -4,7 +4,7 @@ Lastpass Powershell Module
 [![Build Status](https://dev.azure.com/sjlouder/Lastpass-PS/_apis/build/status/CI?branchName=master)](https://dev.azure.com/sjlouder/Lastpass-PS/_build/latest?definitionId=1&branchName=master)
 
 # DESCRIPTION
-Powershell module to interact with Lastpass.
+Unofficial Powershell module to interact with Lastpass.
  
 Built on pure Powershell/.NET core, designed to work without any other external dependencies (eg. cygwin, openSSL) to maximize cross platform portability.
 
@@ -67,7 +67,7 @@ Experimental/in development:
 	development. In order to enable these functions, pass in a hashtable to the module with a key
 	named "ExportWriteCmdlets" and the value set to $True, eg:
 	```
-	Import-Module Lastpass -ArgumentList @{ ExportWriteCmdlets = $True }
+	Import-Module Lastpass-PS -ArgumentList @{ ExportWriteCmdlets = $True }
 	```
 
 Planned:
@@ -105,9 +105,9 @@ Ideas:
 
 
 # INSTALLING
-Currently: download; Import-Module /Path/To/Lastpass-PS/Lastpass
+Currently: download; Import-Module /Path/To/Lastpass-PS/Lastpass-PS
 
-Eventually: Install-Module Lastpass #From Powershell Gallery
+Eventually: Install-Module Lastpass-PS #From Powershell Gallery
 
 # CONTRIBUTING
 While this is still early in development (pre-1.0), I'm mostly looking for testers and test writers, feature ideas/priority, and help with documentation. Pull requests are welcome, but this is a side project so collaboration will likely be slow.
