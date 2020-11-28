@@ -44,6 +44,7 @@ jobs:
       testResultsFiles: $(Build.ArtifactStagingDirectory)/Windows.Tests.XML
       failTaskOnFailedTests: true
 
+  # Windows Powershell currently doesn't work as tests are written with 6.0+ features
   - powershell: Install-Module Pester -Force -Scope CurrentUser -MaximumVersion 4.9 -PassThru
     displayName: (Windows Powershell) Installing Pester
     name: WinPS_Dependencies

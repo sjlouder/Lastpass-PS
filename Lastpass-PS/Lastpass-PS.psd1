@@ -4,7 +4,7 @@
 @{
 
 	# Script module or binary module file associated with this manifest.
-	RootModule = 'Lastpass.psm1'
+	RootModule = 'Lastpass-PS.psm1'
 
 	# Version number of this module.
 	ModuleVersion = '0.5.0'
@@ -25,10 +25,10 @@
 	Copyright = 'Copyright Steven Loudermilk'
 
 	# Description of the functionality provided by this module
-	Description = 'Lastpass PS Module'
+	Description = 'Unofficial Lastpass PS Module'
 
 	# Minimum version of the PowerShell engine required by this module
-	PowerShellVersion = '5.1'
+	PowerShellVersion = '7.0'
 
 	# Name of the PowerShell host required by this module
 	# PowerShellHostName = ''
@@ -64,7 +64,8 @@
 	# NestedModules = @()
 
 	# Functions to export from this module, for best performance, do not use wildcards and do not delete the entry, use an empty array if there are no functions to export.
-	FunctionsToExport = @()
+	# Commenting out as the list of functions to export are determined dynamically based on module parameters
+	# FunctionsToExport = @()
 
 	# Cmdlets to export from this module, for best performance, do not use wildcards and do not delete the entry, use an empty array if there are no cmdlets to export.
 	CmdletsToExport = @()

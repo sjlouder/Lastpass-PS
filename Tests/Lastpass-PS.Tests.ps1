@@ -5,8 +5,8 @@
 Param()
 
 
-Import-Module -Force $PSScriptRoot/../Lastpass -ArgumentList @{ Debug = $True } -Verbose:$False
-InModuleScope Lastpass {
+Import-Module -Force $PSScriptRoot/../Lastpass-PS -ArgumentList @{ Debug = $True } -Verbose:$False
+InModuleScope Lastpass-PS {
 
 	$ScriptRoot = $PSScriptRoot
 	$IsInteractive = $Script:Interactive
@@ -1827,8 +1827,8 @@ Describe 'Publishing' {
 	}
 
 	It 'can be published locally using Publish-Module' {
-		Publish-Module -Repository PesterRepo -Path $PSScriptRoot/../Lastpass -Verbose:$False -EA Stop
-		Find-Module Lastpass -Repository PesterRepo -Verbose:$False | Should -Not -BeNullOrEmpty
+		Publish-Module -Repository PesterRepo -Path $PSScriptRoot/../Lastpass-PS -Verbose:$False -EA Stop
+		Find-Module Lastpass-PS -Repository PesterRepo -Verbose:$False | Should -Not -BeNullOrEmpty
 	}
 
 	AfterAll {
