@@ -27,7 +27,8 @@
 	# Description of the functionality provided by this module
 	Description = 'Unofficial Powershell module to interact with Lastpass.
 	Built on pure Powershell/.NET core, designed to work without any other external dependencies (eg. cygwin, openSSL) to maximize cross platform portability.
-	Based on https://github.com/lastpass/lastpass-cli) and https://github.com/detunized/lastpass-sharp'
+	Based on https://github.com/lastpass/lastpass-cli) and https://github.com/detunized/lastpass-sharp
+	For more information, check the project page: https://github.com/sjlouder/Lastpass-PS'
 
 	# Minimum version of the PowerShell engine required by this module
 	PowerShellVersion = '7.0'
