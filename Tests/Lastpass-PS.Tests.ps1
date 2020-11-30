@@ -1831,6 +1831,10 @@ Describe 'Publishing' {
 		Find-Module Lastpass-PS -Repository PesterRepo -Verbose:$False | Should -Not -BeNullOrEmpty
 	}
 
+	It 'Has a valid module Manifest' {
+		Test-ModuleManifest -Path $PSScriptRoot/../Lastpass-PS/Lastpass-PS.psd1 | Should -Not -BeNullOrEmpty
+	}
+
 	AfterAll {
 		Unregister-PSrepository -Name $Param.Name -Verbose:$False
 		Remove-Item -Force -Recurse TestDrive:/PSRepo -EA Silent
