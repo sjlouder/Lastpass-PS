@@ -244,7 +244,17 @@ Function Connect-Lastpass {
 	Logs in to Lastpass, with the credentials saved in the $Credential
 	variable. Includes the one time password.
 	#>
-
+	[Diagnostics.CodeAnalysis.SuppressMessageAttribute(
+		'PSAvoidUsingPlainTextForPassword',
+		'OneTimePassword',
+		Justification='One time password can be sent in cleartext'
+	)]
+	[Diagnostics.CodeAnalysis.SuppressMessageAttribute(
+		'PSAvoidUsingWriteHost', '',
+		Justification = 'Message is for user interaction,
+			code checks whether there is an interactive prompt,
+			and it is designed to use -noNewLine'
+	)]
 	[CmdletBinding()]
 	Param(
 		[Parameter(Mandatory)]
@@ -304,9 +314,9 @@ Function Connect-Lastpass {
 							$Param.Body.outofbandretryid = $Response.Error.RetryID
 
 							While([Console]::KeyAvailable){
-								$Input = [Console]::ReadKey($True)
-								Write-Debug ("Key: {0} {1}" -f $Input.Key, ($Input.Key -eq 'Enter'))
-								If( $Input.Key -eq 'Enter' ){
+								$NextInput = [Console]::ReadKey($True)
+								Write-Debug ("Key: {0} {1}" -f $NextInput.Key, ($NextInput.Key -eq 'Enter'))
+								If( $NextInput.Key -eq 'Enter' ){
 									Write-Debug $OneTimePassword
 									$Param2 = $Param.Clone()
 									$Param2.Body.outofbandrequest = 0
@@ -318,7 +328,7 @@ Function Connect-Lastpass {
 									$OneTimePassword = $Null
 									Break
 								}
-								$OneTimePassword += $Input.KeyChar
+								$OneTimePassword += $NextInput.KeyChar
 							}
 						}
 						ElseIf($Response.Error.Cause -eq 'MultiFactorResponseFailed'){
@@ -782,6 +792,10 @@ Function Get-Account {
 	Returns all accounts named 'Email'
 	#>
 
+	[Diagnostics.CodeAnalysis.SuppressMessageAttribute(
+		'PSAvoidUsingConvertToSecureStringWithPlainText', '',
+		Justification = 'Information has already been intentionally decrypted for output'
+	)]
 	[CmdletBinding()]
 	Param(
 		[Parameter(
@@ -1316,7 +1330,10 @@ Function New-Password {
 	preceding '\'
 
 	#>
-
+	[Diagnostics.CodeAnalysis.SuppressMessageAttribute(
+		'PSUseShouldProcessForStateChangingFunctions', '',
+		Justification = 'Does not change system state'
+	)]
 	[CmdletBinding(DefaultParameterSetName = 'InvalidCharacters')]
 	Param(
 		[Int] $Length,
@@ -1496,7 +1513,10 @@ Function Set-Item {
 	so Set-Item will effectively perform an update, only overwriting the parameters explicitly
 	passed in.
 	#>
-
+	[Diagnostics.CodeAnalysis.SuppressMessageAttribute(
+		'PSAvoidOverwritingBuiltInCmdlets', '',
+		Justification = 'Private function'
+	)]
 	[CmdletBinding(
 		SupportsShouldProcess,
 		ConfirmImpact = 'High',
@@ -1731,7 +1751,10 @@ Function New-Key {
 	Creates a new Lastpass decryption key using the username and password in the $Credential
 	variable, and the number of iterations in the $Iterations variable
 	#>
-
+	[Diagnostics.CodeAnalysis.SuppressMessageAttribute(
+		'PSUseShouldProcessForStateChangingFunctions', '',
+		Justification = 'Does not change system state'
+	)]
 	[CmdletBinding()]
 	Param(
 		[Parameter(Mandatory)]
@@ -1790,6 +1813,10 @@ Function New-LoginHash {
 	$Iterations variable
 	#>
 
+	[Diagnostics.CodeAnalysis.SuppressMessageAttribute(
+		'PSUseShouldProcessForStateChangingFunctions', '',
+		Justification = 'Does not change system state'
+	)]
 	[CmdletBinding()]
 	Param(
 		[Parameter(Mandatory)]
@@ -1894,26 +1921,21 @@ Function Read-ASN1Item {
 	.PARAMETER Index
 	The start index into the byte array to start reading from
 
-	.PARAMETER StripLeadingZeros
-	Whether to strip out the leading zero bytes from the result
-
 	.EXAMPLE
 	Read-ASN1 -Blob $Blob
 
 	Reads the ASN1 encoded item from the $Blob byte array, starting at index 0
 
 	.EXAMPLE
-	Read-ASN1 -Blob $Blob -Index $Index -StripLeadingZeros
+	Read-ASN1 -Blob $Blob -Index $Index
 
 	Reads the ASN1 encoded item from the $Blob byte array, starting at index $Index.
-	The leading zeros in the result will be stripped.
 	#>
 
 	[CmdletBinding()]
 	Param(
 		[Byte[]] $Blob,
-		[Int] $Index = 0,
-		[Switch] $StripLeadingZeros
+		[Int] $Index = 0
 	)
 
 	Write-Debug "Read-ASN1Item Blob Length: $($Blob.Length), Index: $Index"
@@ -1934,9 +1956,6 @@ Function Read-ASN1Item {
 			$Size = $Size * 256 + ($Blob[($Index+=1)])
 		}
 	}
-	# If($StripLeadingZeros){
-	# 	While($Blob[($Index+1)] -eq 0){ $Index++ }
-	# }
 	$Output.Value = $Blob[($Index+=1)..(($Index+=$Size)-1)]
 	$Output.Value -is [Array] | Write-Debug
 	$Output.Index = $Index
@@ -1989,6 +2008,7 @@ Function ConvertFrom-LPEncryptedData {
 	Decrypts the Base64 encoded encrypted string using the specified key
 	#>
 	[CmdletBinding(DefaultParameterSetName='String')]
+	[OutputType([String])]
 	Param (
 		[Parameter(
 			ParameterSetName='String',
@@ -2104,7 +2124,7 @@ Function ConvertTo-LPEncryptedString {
 	.EXAMPLE
 	ConvertTo-LPEncryptedString -Value 'SecretText'
 
-	Encrypts the input string 'SecretText
+	Encrypts the input string 'SecretText'
 
 	.EXAMPLE
 	$DecryptedAccounts.Username | ConvertTo-LPEncryptedString
@@ -2118,6 +2138,8 @@ Function ConvertTo-LPEncryptedString {
 	#>
 
 	[CmdletBinding(DefaultParameterSetName='String')]
+	[OutputType([String], ParameterSetName='String')]
+	[OutputType([SecureString], ParameterSetName='SecureString')]
 	Param (
 		[Parameter(
 			ParameterSetName='String',
@@ -2303,7 +2325,10 @@ Function Set-Session {
 
 	Sets the Lastpass session
 	#>
-
+	[Diagnostics.CodeAnalysis.SuppressMessageAttribute(
+		'PSUseShouldProcessForStateChangingFunctions', '',
+		Justification = 'Does not change system state'
+	)]
 	Param(
 		[Parameter(
 			Mandatory,

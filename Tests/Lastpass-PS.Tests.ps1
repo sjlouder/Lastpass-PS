@@ -1,5 +1,12 @@
-Import-Module -Force $PSScriptRoot/../Lastpass -ArgumentList @{ Debug = $True } -Verbose:$False
-InModuleScope Lastpass {
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute(
+	'PSAvoidUsingConvertToSecureStringWithPlainText', '',
+	Justification = 'This uses non-sensitive test data'
+)]
+Param()
+
+
+Import-Module -Force $PSScriptRoot/../Lastpass-PS -ArgumentList @{ Debug = $True } -Verbose:$False
+InModuleScope Lastpass-PS {
 
 	$ScriptRoot = $PSScriptRoot
 	$IsInteractive = $Script:Interactive
@@ -9,8 +16,6 @@ InModuleScope Lastpass {
 
 	# Make sure no tests actually reach out to the internet
 	Mock Invoke-RestMethod {}
-	# Invoke-RestMethod ipinfo.io/json | Write-Host
-	# exit
 
 	Describe Connect-Lastpass {
 
@@ -1465,7 +1470,7 @@ InModuleScope Lastpass {
 
 		Context 'Shared Account' {
 			Mock ConvertTo-LPEncryptedString { $Value }
-			Mock Invoke-RestMethod { $Body | Write-Host }
+			Mock Invoke-RestMethod { $Body | Write-Information }
 			$Account | Add-Member -MemberType 'NoteProperty' -Name 'ShareID' -Value $Blob.SharedFolders[0].ID
 			$Account.Folder = 'SharedFolder\{0}' -f $Account.Folder
 
@@ -1804,5 +1809,34 @@ Describe 'TypeData' {
 				}
 			}
 		}
+	}
+}
+
+
+Describe 'Publishing' {
+	BeforeAll {
+		$Repo = (New-Item -ItemType Directory TestDrive:/PSRepo).PSPath
+
+		$Param = @{
+			Name = 'PesterRepo'
+			SourceLocation = $Repo
+			InstallationPolicy = 'Trusted'
+			PackageManagementProvider = 'NuGet'
+		}
+		Register-PSRepository @Param -Verbose:$False
+	}
+
+	It 'can be published locally using Publish-Module' {
+		Publish-Module -Repository PesterRepo -Path $PSScriptRoot/../Lastpass-PS -Verbose:$False -EA Stop
+		Find-Module Lastpass-PS -Repository PesterRepo -Verbose:$False | Should -Not -BeNullOrEmpty
+	}
+
+	It 'Has a valid module Manifest' {
+		Test-ModuleManifest -Path $PSScriptRoot/../Lastpass-PS/Lastpass-PS.psd1 | Should -Not -BeNullOrEmpty
+	}
+
+	AfterAll {
+		Unregister-PSrepository -Name $Param.Name -Verbose:$False
+		Remove-Item -Force -Recurse TestDrive:/PSRepo -EA Silent
 	}
 }
