@@ -11,7 +11,7 @@ jobs:
     vmImage: 'Ubuntu-Latest'
 
   steps:
-  - pwsh: Install-Module Pester -Force -Scope CurrentUser -MaximumVersion 4.9 -PassThru
+  - pwsh: Install-Module Pester -Force -Scope CurrentUser -PassThru
     displayName: Installing Pester
     name: Dependencies
 
@@ -30,7 +30,7 @@ jobs:
     vmImage: 'Windows-Latest'
 
   steps:
-  - pwsh: Install-Module Pester -Force -Scope CurrentUser -MaximumVersion 4.9 -PassThru
+  - pwsh: Install-Module Pester -Force -Scope CurrentUser -PassThru
     displayName: Installing Pester
     name: Dependencies
 
@@ -45,7 +45,7 @@ jobs:
       failTaskOnFailedTests: true
 
   # Windows Powershell currently doesn't work as tests are written with 6.0+ features
-  - powershell: Install-Module Pester -Force -Scope CurrentUser -MaximumVersion 4.9 -PassThru
+  - powershell: Install-Module Pester -Force -Scope CurrentUser -PassThru
     displayName: (Windows Powershell) Installing Pester
     name: WinPS_Dependencies
     enabled: false
@@ -67,7 +67,7 @@ jobs:
     vmImage: 'MacOS-Latest'
 
   steps:
-  - pwsh: Install-Module Pester -Force -Scope CurrentUser -MaximumVersion 4.9 -PassThru
+  - pwsh: Install-Module Pester -Force -Scope CurrentUser -PassThru
     displayName: Installing Pester
     name: Dependencies
 
