@@ -24,7 +24,7 @@ jobs:
     inputs:
       testResultsFormat: NUnit
       # testResultsFiles: $(Build.ArtifactStagingDirectory)/Linux.Tests.XML
-      testResultsFiles: $(Build.ArtifactStagingDirectory)/testResult.xml
+      testResultsFiles: $(Build.ArtifactStagingDirectory)/testResults.xml
       failTaskOnFailedTests: true
 
 - job: Windows
@@ -45,7 +45,7 @@ jobs:
     inputs:
       testResultsFormat: NUnit
       # testResultsFiles: $(Build.ArtifactStagingDirectory)/Windows.Tests.XML
-      testResultsFiles: $(Build.ArtifactStagingDirectory)/testResult.xml
+      testResultsFiles: $(Build.ArtifactStagingDirectory)/testResults.xml
       failTaskOnFailedTests: true
 
   # Windows Powershell currently doesn't work as tests are written with 6.0+ features
@@ -64,7 +64,7 @@ jobs:
     inputs:
       testResultsFormat: NUnit
       # testResultsFiles: $(Build.ArtifactStagingDirectory)/WindowsPS.Tests.XML
-      testResultsFiles: $(Build.ArtifactStagingDirectory)/testResult.xml
+      testResultsFiles: $(Build.ArtifactStagingDirectory)/testResults.xml
 
       failTaskOnFailedTests: true
     enabled: false
@@ -87,5 +87,5 @@ jobs:
     inputs:
       testResultsFormat: NUnit
       # testResultsFiles: $(Build.ArtifactStagingDirectory)/OSX.Tests.XML
-      testResultsFiles: $(Build.ArtifactStagingDirectory)/testResult.xml
+      testResultsFiles: $(Build.ArtifactStagingDirectory)/testResults.xml
       failTaskOnFailedTests: true
