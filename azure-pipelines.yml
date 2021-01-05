@@ -19,6 +19,8 @@ jobs:
   - pwsh: Invoke-Pester -CI
     displayName: Running tests
     name: Tests
+    workingDirectory: $(Build.ArtifactStagingDirectory)
+
 
   - task: PublishTestResults@2
     inputs:
@@ -40,6 +42,7 @@ jobs:
   - pwsh: Invoke-Pester -CI
     displayName: Running tests
     name: Tests
+    workingDirectory: $(Build.ArtifactStagingDirectory)
 
   - task: PublishTestResults@2
     inputs:
@@ -54,11 +57,13 @@ jobs:
     name: WinPS_Dependencies
     enabled: false
 
+
   # - powershell: Invoke-Pester -OutputFormat NUnitXML -OutputFile $(Build.ArtifactStagingDirectory)/WindowsPS.Tests.XML
   - powershell: Invoke-Pester -CI
     displayName: (Windows Powershell) Running tests
     name: WinPS_Tests
     enabled: false
+    workingDirectory: $(Build.ArtifactStagingDirectory)
 
   - task: PublishTestResults@2
     inputs:
@@ -82,6 +87,8 @@ jobs:
   - pwsh: Invoke-Pester -CI
     displayName: Running tests
     name: Tests
+    workingDirectory: $(Build.ArtifactStagingDirectory)
+
 
   - task: PublishTestResults@2
     inputs:
