@@ -4,8 +4,10 @@
 )]
 Param()
 
+# This needs to be imported during discovery for the TypeData tests
+Import-Module -Force $PSScriptRoot/../Lastpass-PS -ArgumentList @{ Debug = $True } -Verbose:$False
+
 BeforeAll {
-	Import-Module -Force $PSScriptRoot/../Lastpass-PS -ArgumentList @{ Debug = $True } -Verbose:$False
 	# $IsInteractive = InModuleScope Lastpass-PS { $Script:Interactive }
 	$IsInteractive = $True
 
