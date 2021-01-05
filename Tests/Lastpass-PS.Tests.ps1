@@ -534,8 +534,10 @@ Describe Disconnect-Lastpass {
 Describe Sync-Lastpass {
 
 	BeforeAll {
-		InModuleScope Lastpass-PS {
-			$Script:Session = $MockSession
+		InModuleScope Lastpass-PS -Parameters @{ Session = $MockSession } {
+
+			Param( $Session )
+			$Script:Session = $Session
 			# [PSCustomObject] @{
 			# 	Key = [Byte[]] @(
 			# 		160,143,117,193,122,157,146,7,23,206,62,167,167,182,117,117,
@@ -771,11 +773,13 @@ Describe New-Account -Skip {
 Describe Get-Account {
 
 	BeforeAll {
-		InModuleScope Lastpass-PS {
-			$Script:Blob = $MockVault.Clone()
+		InModuleScope Lastpass-PS -Parameters @{ Vault = $MockVault.Clone(); Session = $MockSession } {
+
+			Param( $Vault, $Session )
+			$Script:Blob = $Vault
 			$Script:PasswordPrompt = [DateTime]::Now
 			$Script:PasswordTimeout = New-TimeSpan -Minutes 2
-			$Script:Session = $MockSession
+			$Script:Session = $Session
 		}
 		$ExpectedAccounts = (Get-Content $PSScriptRoot/DecryptedVault.json | ConvertFrom-Json -AsHashTable).Accounts
 		$AllResults = Get-Account
@@ -883,9 +887,11 @@ Describe Set-Account {
 	BeforeAll {
 		Mock Set-Item -ModuleName Lastpass-PS
 
-		InModuleScope Lastpass-PS {
-			$Script:Blob = $MockVault
-			$Script:Session = $MockSession
+		InModuleScope Lastpass-PS -Parameters @{ Vault = $MockVault.Clone(); Session = $MockSession } {
+
+			Param( $Vault, $Session )
+			$Script:Blob = $Vault
+			$Script:Session = $Session
 		}
 
 		$Account = [PSCustomObject] @{
@@ -955,9 +961,11 @@ Describe Set-Account {
 Describe Get-Note {
 
 	BeforeAll {
-		InModuleScope Lastpass-PS {
-			$Script:Session = $MockSession
-			$Script:Blob = $MockVault.Clone()
+		InModuleScope Lastpass-PS -Parameters @{ Vault = $MockVault.Clone(); Session = $MockSession } {
+			Param( $Vault, $Session )
+
+			$Script:Session = $Session
+			$Script:Blob = $Vault
 			$Script:PasswordPrompt = [DateTime]::Now
 			$Script:PasswordTimeout = New-TimeSpan -Minutes 2
 		}
@@ -1061,9 +1069,11 @@ Describe Get-Note {
 Describe Set-Note {
 
 	BeforeAll {
-		InModuleScope Lastpass-PS {
-			$Script:Session = $MockSession
-			$Script:Blob = $MockVault.Clone()
+		InModuleScope Lastpass-PS -Parameters @{ Vault = $MockVault.Clone(); Session = $MockSession } {
+			Param( $Vault, $Session )
+
+			$Script:Session = $Session
+			$Script:Blob = $Vault
 		}
 		Mock Set-Item -ModuleName Lastpass-PS
 
@@ -1324,9 +1334,11 @@ Describe New-Password {
 
 Describe Set-Item {
 	BeforeAll {
-		InModuleScope Lastpass-PS {
-			$Script:Blob = $MockVault.Clone()
-			$Script:Session = $MockSession
+		InModuleScope Lastpass-PS -Parameters @{ Vault = $MockVault.Clone(); Session = $MockSession } {
+			Param( $Vault, $Session )
+
+			$Script:Blob = $Vault
+			$Script:Session = $Session
 			# $Script:Blob.SharedFolders | % {$_.Key = [Byte[]][Char[]] $_.Key}
 			$Confirm = $Script:ConfirmPreference
 			$Script:ConfirmPreference = 'None'
@@ -1525,7 +1537,26 @@ Describe Set-Item {
 		BeforeAll {
 			Mock ConvertTo-LPEncryptedString -ModuleName Lastpass-PS { $Value }
 			Mock Invoke-RestMethod -ModuleName Lastpass-PS { $Body | Write-Information }
-			$Account | Add-Member -MemberType 'NoteProperty' -Name 'ShareID' -Value $Blob.SharedFolders[0].ID
+			# $Account = [PSCustomObject] @{
+			# 	PSTypeName	 = 'Lastpass.Account'
+			# 	ID           = '5148901049320353252'
+			# 	Name         = 'sitename'
+			# 	URL          = 'http://url.com'
+			# 	Folder       = 'NewFolder1\NewFolder2'
+			# 	Username     = 'usernamehere2'
+			# 	Credential   = [PSCredential]::New(
+			# 						'usernamehere2',
+			# 						(ConvertTo-SecureString -A -F 'fdsafdasfda')
+			# 					)
+			# 	Notes        = 'notecontent3'
+			# 	Favorite     = $False
+			# 	LastModified = [DateTime] '4/3/19 4:58:05 AM'
+			# 	LastAccessed = [DateTime] '4/4/19 1:42:48 AM'
+			# 	LaunchCount  = 0
+			# 	Bookmark     = $False
+			# 	Password     = 'fdsafdasfda'
+			# }
+			$Account | Add-Member -MemberType 'NoteProperty' -Name 'ShareID' -Value $MockVault.SharedFolders[0].ID
 			$Account.Folder = 'SharedFolder\{0}' -f $Account.Folder
 
 			$Account | Set-Account
@@ -1533,7 +1564,7 @@ Describe Set-Item {
 
 		It 'Includes the sharedfolderid parameter' {
 			Assert-MockCalled Invoke-RestMethod -ModuleName Lastpass-PS -Scope Context -ParameterFilter {
-				$Body.SharedFolderID -eq $Blob.SharedFolders[0].ID
+				$Body.SharedFolderID -eq $MockVault.SharedFolders[0].ID
 			}
 		}
 
@@ -1545,23 +1576,23 @@ Describe Set-Item {
 
 		It 'Uses the shared folder key to encrypt the account information' {
 			Assert-MockCalled ConvertTo-LPEncryptedString -ModuleName Lastpass-PS -Scope Describe -ParameterFilter {
-				([String] $Key) -eq ([String]$Blob.SharedFolders[0].Key) -and
+				([String] $Key) -eq ([String] $MockVault.SharedFolders[0].Key) -and
 				$Value -eq $Account.Name
 			}
 			Assert-MockCalled ConvertTo-LPEncryptedString -ModuleName Lastpass-PS -Scope Describe -ParameterFilter {
-				([String] $Key) -eq ([String]$Blob.SharedFolders[0].Key) -and
+				([String] $Key) -eq ([String] $MockVault.SharedFolders[0].Key) -and
 				$Value -eq 'NewFolder1\NewFolder2'
 			}
 			Assert-MockCalled ConvertTo-LPEncryptedString -ModuleName Lastpass-PS -Scope Describe -ParameterFilter {
-				([String] $Key) -eq ([String]$Blob.SharedFolders[0].Key) -and
+				([String] $Key) -eq ([String] $MockVault.SharedFolders[0].Key) -and
 				$Value -eq $Account.Notes
 			}
 			Assert-MockCalled ConvertTo-LPEncryptedString -ModuleName Lastpass-PS -Scope Describe -ParameterFilter {
-				([String] $Key) -eq ([String]$Blob.SharedFolders[0].Key) -and
+				([String] $Key) -eq ([String] $MockVault.SharedFolders[0].Key) -and
 				$Value -eq $Account.Username
 			}
 			Assert-MockCalled ConvertTo-LPEncryptedString -ModuleName Lastpass-PS -Scope Describe -ParameterFilter {
-				([String] $Key) -eq ([String]$Blob.SharedFolders[0].Key) -and
+				([String] $Key) -eq ([String] $MockVault.SharedFolders[0].Key) -and
 				$Value -eq $Account.Password
 			}
 		}
@@ -1747,9 +1778,11 @@ Describe ConvertTo-LPEncryptedString {
 
 Describe Confirm-Password {
 	BeforeAll {
-		InModuleScope Lastpass-PS {
-			$Script:Blob = $MockVault.Clone()
-			$Script:Session = $MockSession
+		InModuleScope Lastpass-PS -Parameters @{ Vault = $MockVault.Clone(); Session = $MockSession } {
+			Param( $Vault, $Session )
+
+			$Script:Blob = $Vault
+			$Script:Session = $Session
 
 		}
 
