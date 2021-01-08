@@ -1,28 +1,26 @@
-# Starter pipeline
-# Start with a minimal pipeline that you can customize to build and deploy your code.
-# Add steps that build, run tests, deploy, and more:
-# https://aka.ms/yaml
+# Azure DevOps CI pipeline
 
-# trigger:
-# - master
 jobs:
 - job: Linux
   pool:
     vmImage: 'Ubuntu-Latest'
 
   steps:
-  - pwsh: Install-Module Pester -Force -Scope CurrentUser -MaximumVersion 4.9 -PassThru
+  - pwsh: Install-Module Pester -Force -Scope CurrentUser -PassThru
     displayName: Installing Pester
     name: Dependencies
 
-  - pwsh: Invoke-Pester -OutputFormat NUnitXML -OutputFile $(Build.ArtifactStagingDirectory)/Linux.Tests.XML
+  - pwsh: Invoke-Pester -CI
     displayName: Running tests
     name: Tests
+    continueOnError: true
+
+
 
   - task: PublishTestResults@2
     inputs:
       testResultsFormat: NUnit
-      testResultsFiles: $(Build.ArtifactStagingDirectory)/Linux.Tests.XML
+      testResultsFiles: $(System.DefaultWorkingDirectory)/testResults.xml
       failTaskOnFailedTests: true
 
 - job: Windows
@@ -30,53 +28,58 @@ jobs:
     vmImage: 'Windows-Latest'
 
   steps:
-  - pwsh: Install-Module Pester -Force -Scope CurrentUser -MaximumVersion 4.9 -PassThru
+  - pwsh: Install-Module Pester -Force -Scope CurrentUser -PassThru
     displayName: Installing Pester
     name: Dependencies
 
-  - pwsh: Invoke-Pester -OutputFormat NUnitXML -OutputFile $(Build.ArtifactStagingDirectory)/Windows.Tests.XML
+  - pwsh: Invoke-Pester -CI
     displayName: Running tests
     name: Tests
+    continueOnError: true
+
 
   - task: PublishTestResults@2
     inputs:
       testResultsFormat: NUnit
-      testResultsFiles: $(Build.ArtifactStagingDirectory)/Windows.Tests.XML
+      testResultsFiles: $(System.DefaultWorkingDirectory)/testResults.xml
       failTaskOnFailedTests: true
 
   # Windows Powershell currently doesn't work as tests are written with 6.0+ features
-  - powershell: Install-Module Pester -Force -Scope CurrentUser -MaximumVersion 4.9 -PassThru
+  - powershell: Install-Module Pester -Force -Scope CurrentUser -PassThru
     displayName: (Windows Powershell) Installing Pester
     name: WinPS_Dependencies
     enabled: false
 
-  - powershell: Invoke-Pester -OutputFormat NUnitXML -OutputFile $(Build.ArtifactStagingDirectory)/WindowsPS.Tests.XML
+
+  - powershell: Invoke-Pester -CI
     displayName: (Windows Powershell) Running tests
     name: WinPS_Tests
     enabled: false
+    continueOnError: true
 
   - task: PublishTestResults@2
+    enabled: false
     inputs:
       testResultsFormat: NUnit
-      testResultsFiles: $(Build.ArtifactStagingDirectory)/WindowsPS.Tests.XML
+      testResultsFiles: $(System.DefaultWorkingDirectory)/testResults.xml
       failTaskOnFailedTests: true
-    enabled: false
 
 - job: MacOSX
   pool:
     vmImage: 'MacOS-Latest'
 
   steps:
-  - pwsh: Install-Module Pester -Force -Scope CurrentUser -MaximumVersion 4.9 -PassThru
+  - pwsh: Install-Module Pester -Force -Scope CurrentUser -PassThru
     displayName: Installing Pester
     name: Dependencies
 
-  - pwsh: Invoke-Pester -OutputFormat NUnitXML -OutputFile $(Build.ArtifactStagingDirectory)/OSX.Tests.XML
+  - pwsh: Invoke-Pester -CI
     displayName: Running tests
     name: Tests
+    continueOnError: true
 
   - task: PublishTestResults@2
     inputs:
       testResultsFormat: NUnit
-      testResultsFiles: $(Build.ArtifactStagingDirectory)/OSX.Tests.XML
+      testResultsFiles: $(System.DefaultWorkingDirectory)/testResults.xml
       failTaskOnFailedTests: true
