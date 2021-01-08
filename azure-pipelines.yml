@@ -19,14 +19,16 @@ jobs:
   - pwsh: Invoke-Pester -CI
     displayName: Running tests
     name: Tests
-    workingDirectory: $(Build.ArtifactStagingDirectory)
+    # workingDirectory: $(Build.ArtifactStagingDirectory)
+    continueOnError: true
+
 
 
   - task: PublishTestResults@2
     inputs:
       testResultsFormat: NUnit
       # testResultsFiles: $(Build.ArtifactStagingDirectory)/Linux.Tests.XML
-      testResultsFiles: $(Build.ArtifactStagingDirectory)/testResults.xml
+      testResultsFiles: $(System.DefaultWorkingDirectory)/testResults.xml
       failTaskOnFailedTests: true
 
 - job: Windows
@@ -42,13 +44,15 @@ jobs:
   - pwsh: Invoke-Pester -CI
     displayName: Running tests
     name: Tests
-    workingDirectory: $(Build.ArtifactStagingDirectory)
+    # workingDirectory: $(Build.ArtifactStagingDirectory)
+    continueOnError: true
+
 
   - task: PublishTestResults@2
     inputs:
       testResultsFormat: NUnit
       # testResultsFiles: $(Build.ArtifactStagingDirectory)/Windows.Tests.XML
-      testResultsFiles: $(Build.ArtifactStagingDirectory)/testResults.xml
+      testResultsFiles: $(System.DefaultWorkingDirectory)/testResults.xml
       failTaskOnFailedTests: true
 
   # Windows Powershell currently doesn't work as tests are written with 6.0+ features
@@ -63,13 +67,14 @@ jobs:
     displayName: (Windows Powershell) Running tests
     name: WinPS_Tests
     enabled: false
-    workingDirectory: $(Build.ArtifactStagingDirectory)
+    # workingDirectory: $(Build.ArtifactStagingDirectory)
+    continueOnError: true
 
   - task: PublishTestResults@2
     inputs:
       testResultsFormat: NUnit
       # testResultsFiles: $(Build.ArtifactStagingDirectory)/WindowsPS.Tests.XML
-      testResultsFiles: $(Build.ArtifactStagingDirectory)/testResults.xml
+      testResultsFiles: $(System.DefaultWorkingDirectory)/testResults.xml
 
       failTaskOnFailedTests: true
     enabled: false
@@ -87,12 +92,12 @@ jobs:
   - pwsh: Invoke-Pester -CI
     displayName: Running tests
     name: Tests
-    workingDirectory: $(Build.ArtifactStagingDirectory)
-
+    # workingDirectory: $(Build.ArtifactStagingDirectory)
+    continueOnError: true
 
   - task: PublishTestResults@2
     inputs:
       testResultsFormat: NUnit
       # testResultsFiles: $(Build.ArtifactStagingDirectory)/OSX.Tests.XML
-      testResultsFiles: $(Build.ArtifactStagingDirectory)/testResults.xml
+      testResultsFiles: $(System.DefaultWorkingDirectory)/testResults.xml
       failTaskOnFailedTests: true
