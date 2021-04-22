@@ -586,7 +586,7 @@ Describe Sync-Lastpass {
 
 	It 'Parses the accounts' {
 
-		$Blob.Accounts.Length | Should -Be $Expected.Accounts.Count
+		$Blob.Accounts.Count | Should -Be $Expected.Accounts.Count
 		$Expected.Accounts | ForEach {
 			$Reference = $_
 			$Account = ($Blob.Accounts | Where ID -eq $Reference.ID)
@@ -625,7 +625,7 @@ Describe Sync-Lastpass {
 	}
 
 	It 'Parses the secure notes' {
-		$Blob.SecureNotes.Length | Should -Be $Expected.SecureNotes.Count
+		$Blob.SecureNotes.Count | Should -Be $Expected.SecureNotes.Count
 		$Expected.SecureNotes | ForEach {
 			$Reference = $_
 			$Note = ($Blob.SecureNotes | Where ID -eq $Reference.ID)
@@ -649,7 +649,7 @@ Describe Sync-Lastpass {
 	}
 
 	It 'Parses and decrypts the folders' {
-		$Blob.Folders.Length | Should -Be 4
+		$Blob.Folders.Count | Should -Be $Expected.Folders.Count
 		$Expected.Folders | ForEach {
 			$Reference = $_
 			# $_ | Out-String | Write-Host
@@ -730,7 +730,7 @@ Describe Sync-Lastpass {
 	}
 
 	It 'Parses and decrypts the shared folders' {
-		$Blob.SharedFolders.Length | Should -Be 2
+		$Blob.SharedFolders.Count | Should -Be $Expected.SharedFolders.Count
 		$Expected.SharedFolders | ForEach {
 			$Reference = $_
 			$Folder = ($Blob.SharedFolders | Where ID -eq $Reference.ID)
