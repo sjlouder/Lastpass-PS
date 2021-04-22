@@ -571,18 +571,28 @@ Function Sync-Lastpass {
 	$Index = 0
 	$Script:Blob = @{
 		Metadata		= @{}
-		Accounts		= @()
-		SecureNotes		= @()
-		Folders			= @()
-		SharedFolders	= @()
-	}
+		Accounts		= [Collections.ArrayList]::New()
+		SecureNotes		= [Collections.ArrayList]::New()
+		Folders			= [Collections.ArrayList]::New()
+		SharedFolders	= [Collections.ArrayList]::New()
+}
 	While($Index -lt ($Response.Length-8)){
-		$Type = ([Char[]] $Response[$Index..($Index+=3)]) -join ''
-		Write-Debug "Type: $Type"
-		Write-Debug "Index: $Index"
-		$Data = Read-Item -Blob $Response -Index ($Index+=1) -Debug:$False
-		$Index += $Data.Length + 4
-		Write-Debug "After index: $Index"
+		$Type = ([Char[]] $Response[$Index..(($Index+=3))]) -join ''
+		$PSCmdlet.WriteDebug("Type: $Type")
+		$PSCmdlet.WriteDebug("Index: $Index")
+
+		$Size = $Response[($Index+=1)..($Index+=3)]
+		If([BitConverter]::IsLittleEndian){ [Array]::Reverse($Size) }
+		$Size = [BitConverter]::ToUInt32($Size,0)
+		$PSCmdlet.WriteDebug("Size: $Size")
+
+		If($Size){
+			$Data = $Response[($Index+=1)..(($Index+=$Size)-1)]
+			$PSCmdlet.WriteDebug("Data: $Data")
+			$PSCmdlet.WriteDebug("DataSize: $($Data.Length)")
+		}
+
+		$PSCmdlet.WriteDebug("After index: $Index")
 
 		If(!$Blob.Metadata[$Type]){ $Blob.Metadata[$Type] = 1}
 		Else{ $Blob.Metadata[$Type] += 1 }
@@ -594,32 +604,44 @@ Function Sync-Lastpass {
 		Switch($Type){
 			LPAV { $Blob.Version = [Char[]] $Data -join '' }
 			ACCT {
-				Write-Debug "BEGIN ACCOUNT DECODE"
+				$PSCmdlet.WriteDebug("BEGIN ACCOUNT DECODE")
 				$Account = @{ PSTypeName = 'Lastpass.Account' }
 				If($Blob.SharedFolders[-1].Key){ $Param = @{ Key = $Blob.SharedFolders[-1].Key } }
-				'Param: {0}' -f ($Param | Out-String) | Write-Debug
-				$Schema.Account.Fields.Keys | ForEach {
-					Write-Debug "Field: $_"
-					$Field = $_
-					$Item = Read-Item -Blob $Data -Index $ItemIndex -Debug:$False
-					$ItemIndex += $Item.length + 4
-					#'Returned length: {0}' -f $Item.Length | Write-Debug
-					$Account[$Field] = Switch($Schema.Account.Fields[$Field]){
+				ForEach($Field in $Schema.Account.Fields.GetEnumerator()) {# | ForEach {
+					$PSCmdlet.WriteDebug("Field: $($Field.Key)")
+
+					$Size = $Data[$ItemIndex..($ItemIndex+=3)]
+					If([BitConverter]::IsLittleEndian){ [Array]::Reverse($Size) }
+					$Size = [BitConverter]::ToUInt32($Size,0)
+					$PSCmdlet.WriteDebug("Size: $Size")
+					If($Size){
+						$Item = $Data[($ItemIndex+=1)..(($ItemIndex+=$Size)-1)]
+						$PSCmdlet.WriteDebug("Data: $Item")
+					}Else{ $Item = $Null; $ItemIndex +=1 }
+
+
+
+					# TODO: This switch statement is taking about 65% of the
+					# run time on a moderately large dataset (with no shares
+					# or attachments). Focal point for future performance
+					# improvements
+					$Account[$Field.Key] = Switch($Field.Value){
 						Encrypted {
 							# The name and group are sent encrypted, but are generally needed
 							# for organizing and finding the accounts, so they are decrypted here.
-							If($Field -in 'Name','Folder'){
-								[Char[]] $Item -join '' | ConvertFrom-LPEncryptedData @Param
+							If($Field.Key -in 'Name','Folder'){
+								ConvertFrom-LPEncryptedData @Param -Data ([Char[]] $Item -join '' )
 							}
 							Else{ ConvertTo-LPEncryptedString @Param -Bytes $Item }
 						}
 						#TODO: See if there are cleaner ways to do these conversions
-						Hex		{ [Char[]] ([Char[]] $Item -join '' | ConvertFrom-Hex) -join '' }
+						Hex		{ [Char[]] (ConvertFrom-Hex ([Char[]] $Item -join '')) -join '' }
 						Boolean	{ !!([Int] ([Char[]] $Item -join '')) }
 						Date	{ $Epoch.AddSeconds([Char[]] $Item -join '') }
 						Default	{ If($Item){[Char[]] $Item -join ''} }
 					}
-					Write-Debug "End Field $_"
+					$PSCmdlet.WriteDebug(("Decoded value: {0}" -f $Account[$Field.Key]))
+					$PSCmdlet.WriteDebug("End Field $_")
 				}
 
 				If($Account.Folder -in '(none)', ''){ $Account.Folder = $Null }
@@ -634,7 +656,7 @@ Function Sync-Lastpass {
 
 				Switch($Account.URL){
 					'http://sn' {
-						Write-Debug 'Item is Secure note'
+						$PSCmdlet.WriteDebug('Item is Secure note')
 						$Account.Keys.Where({$_ -notin $Schema.SecureNote.Fields }) |
 							ForEach { $Account.Remove($_) }
 						$Account.PSTypeName = 'Lastpass.SecureNote'
@@ -644,41 +666,48 @@ Function Sync-Lastpass {
 								[Byte[]] [Char[]] $Account.AttachmentKey
 							)
 						}
-						$Blob.SecureNotes += $Account
+						$Blob.SecureNotes.Add($Account)
 					}
 					'http://group' {
-						Write-Debug 'Item is folder'
+						$PSCmdlet.WriteDebug('Item is folder')
 						$Account.Name = $Account.Folder
 						$Account.Keys.Where({$_ -notin $Schema.Folder.Fields}) |
 							ForEach { $Account.Remove($_) }
 						$Account.PSTypeName = 'Lastpass.Folder'
-						$Blob.Folders += $Account
+						$Blob.Folders.Add($Account)
 					}
 					Default {
-						$Blob.Accounts += $Account
+						$Blob.Accounts.Add($Account)
 					}
 				}
 
-				Write-Debug "END ACCOUNT DECODE"
+				$PSCmdlet.WriteDebug("END ACCOUNT DECODE")
 			}
 			{$_ -in 'ACFL','ACOF'} {
-				Write-Debug 'BEGIN FORMFIELD DECODE'
-				If(!$Blob.Accounts[-1]){ Write-Error 'Parse failed. Unable to find account for form fields' }
-				If(!$Blob.Accounts[-1].FormFields){ $Blob.Accounts[-1].FormFields = @() }
+				$PSCmdlet.WriteDebug('BEGIN FORMFIELD DECODE')
+				If(!$Blob.Accounts[-1]){ Throw 'Parse failed. Unable to find account for form fields' }
+				If(!$Blob.Accounts[-1].FormFields){ $Blob.Accounts[-1].FormFields = [Collections.ArrayList]::New() } #@() }
 				$FormField = [Ordered] @{}
 
-				$Schema.FormField.Fields.Keys | ForEach {
-					Write-Debug "Field: $_"
-					$Item = Read-Item -Blob $Data -Index $ItemIndex -Debug:$False
-					'Returned length: {0}' -f $Item.Length | Write-Debug
-					$ItemIndex += $Item.length + 4
+				ForEach ($Field in $Schema.FormField.Fields.Keys){
+					$PSCmdlet.WriteDebug("Field: $Field")
 
-					$FormField[$_] = Switch($Schema.FormField.Fields[$_]){
+					$Size = $Data[$ItemIndex..($ItemIndex+=3)]
+					If([BitConverter]::IsLittleEndian){ [Array]::Reverse($Size) }
+					$Size = [BitConverter]::ToUInt32($Size,0)
+					$PSCmdlet.WriteDebug("Size: $Size")
+					If($Size){
+						$Item = $Data[($ItemIndex+=1)..(($ItemIndex+=$Size)-1)]
+						$PSCmdlet.WriteDebug("Data: $Item")
+					}Else{ $Item = $Null; $ItemIndex +=1 }
+
+
+					$FormField[$Field] = Switch($Schema.FormField.Fields[$Field]){
 						Boolean { !!([Int] ([Char[]] $Item -join '')) }
 						String { If($Item){[Char[]] $Item -join ''} }
 						Default { $Item }
 					}
-					Write-Debug "End Field $_"
+					$PSCmdlet.WriteDebug("End Field $_")
 				}
 				Switch -Regex ($FormField.Type){
 					'email|tel|text|password|textarea' {
@@ -686,25 +715,33 @@ Function Sync-Lastpass {
 					}
 					Default { $FormField.Value = [Char[]] $FormField.Value -join '' }
 				}
-				$Blob.Accounts[-1].FormFields += $FormField
-				Write-Debug 'END FORMFIELD DECODE'
+
+				$Blob.Accounts[-1].FormFields.Add($FormField)
+				$PSCmdlet.WriteDebug('END FORMFIELD DECODE')
 			}
 			ATTA {
-				Write-Debug 'BEGIN ATTACHMENT DECODE'
+				$PSCmdlet.WriteDebug('BEGIN ATTACHMENT DECODE')
 
 				$Attachment = @{ PSTypeName = 'Lastpass.Attachment' }
 				$Schema.Attachment.Fields.Keys | ForEach {
-					Write-Debug "Field: $_"
+					$PSCmdlet.WriteDebug("Field: $_")
 
-					$Item = Read-Item -Blob $Data -Index $ItemIndex -Debug:$False
-					'Returned length: {0}' -f $Item.Length | Write-Debug
-					$ItemIndex += $Item.length + 4
+					$Size = $Data[$ItemIndex..($ItemIndex+=3)]
+					If([BitConverter]::IsLittleEndian){ [Array]::Reverse($Size) }
+					$Size = [BitConverter]::ToUInt32($Size,0)
+					$PSCmdlet.WriteDebug("Size: $Size")
+					If($Size){
+						$Item = $Data[($ItemIndex+=1)..(($ItemIndex+=$Size)-1)]
+						$PSCmdlet.WriteDebug("Data: $Data")
+					}Else{ $Item = $Null; $ItemIndex +=1 }
+
+
 					$Attachment[$_] = Switch($Schema.Attachment.Fields[$_]){
 						Encrypted { ConvertTo-LPEncryptedString @Param -Bytes $Item }
 						String { If($Item){[Char[]] $Item -join ''} }
 					}
 
-					Write-Debug "End Field: $_"
+					$PSCmdlet.WriteDebug("End Field: $_")
 				}
 				$SecureNote = $Blob.SecureNotes | Where ID -eq $Attachment.Parent
 				If(!$SecureNote){
@@ -713,19 +750,28 @@ Function Sync-Lastpass {
 						$Attachment | Out-String
 					) | Write-Warning
 				}
-				If(!$SecureNote.Attachments){ $SecureNote.Attachments = @() }
-				$SecureNote.Attachments += $Attachment
+				If(!$SecureNote.Attachments){ $SecureNote.Attachments = [Collections.ArrayList]::New() } #@() }
+				$SecureNote.Attachments.Add($Attachment)
 
-				Write-Debug 'END ATTACHMENT DECODE'
+				$PSCmdlet.WriteDebug('END ATTACHMENT DECODE')
+
 			}
 			SHAR {
-				Write-Debug "BEGIN SHARE DECODE"
+				$PSCmdlet.WriteDebug("BEGIN SHARE DECODE")
 				$Folder = @{ PSTypeName = 'Lastpass.SharedFolder' }
 				$Schema.SharedFolder.Fields.Keys | ForEach {
-					Write-Debug "Field: $_"
-					$Item = Read-Item -Blob $Data -Index $ItemIndex -Debug:$False
-					'Returned length: {0}' -f $Item.Length | Write-Debug
-					$ItemIndex += $Item.length + 4
+					$PSCmdlet.WriteDebug("Field: $_")
+
+					$Size = $Data[$ItemIndex..($ItemIndex+=3)]
+					If([BitConverter]::IsLittleEndian){ [Array]::Reverse($Size) }
+					$Size = [BitConverter]::ToUInt32($Size,0)
+					$PSCmdlet.WriteDebug("Size: $Size")
+					If($Size){
+						$Item = $Data[($ItemIndex+=1)..(($ItemIndex+=$Size)-1)]
+						$PSCmdlet.WriteDebug("Data: $Data")
+					}Else{ $Item = $Null; $ItemIndex +=1 }
+
+
 					$Folder[$_] = Switch($Schema.SharedFolder.Fields[$_]){
 						String	{ If($Item){[Char[]] $Item -join ''} }
 						Boolean	{ !!([Int] ([Char[]] $Item -join '')) }
@@ -733,7 +779,7 @@ Function Sync-Lastpass {
 						Hex		{ [Char[]] $Item -join '' | ConvertFrom-Hex }
 						Default { $Item }
 					}
-					Write-Debug "End Field $_"
+					$PSCmdlet.WriteDebug("End Field $_")
 				}
 
 				If(!$Folder.AESFolderKey -or !$Folder.RSAEncryptedFolderKey){
@@ -752,9 +798,10 @@ Function Sync-Lastpass {
 				}
 				$Folder.Name = $Folder.Name | ConvertFrom-LPEncryptedData -Base64 -Key $Folder.Key
 
-				$Blob.SharedFolders += [PSCustomObject] $Folder
-				Write-Debug "END SHARE DECODE"
+				$Blob.SharedFolders.Add(([PSCustomObject] $Folder))
+				$PSCmdlet.WriteDebug("END SHARE DECODE")
 			}
+
 			Default {
 				If($Blob.ContainsKey($Type)){ $Blob[$Type] += $Data }
 				Else{ $Blob[$Type] = @($Data) }
