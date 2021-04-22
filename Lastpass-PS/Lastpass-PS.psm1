@@ -543,6 +543,9 @@ Function Sync-Lastpass {
 	[CmdletBinding()]
 	Param()
 
+
+	# NOTE: This function has been refactored for performance and
+	# therefore does not follow the module's style guidelines.
 	If(!$Script:Session){ Throw 'User session not found. Log in with Connect-Lastpass' }
 	Write-Verbose 'Syncing Lastpass information'
 
