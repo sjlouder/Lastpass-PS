@@ -1261,7 +1261,7 @@ Function Get-Attachment {
 
 	Downloads all of the attachments of the 'AttachmentNote' secure note
 	to the Attachments directory in the current directory.
-	Each attachment is saved with it's respective original filename in Lastpass
+	Each attachment is saved with its respective original filename in Lastpass
 	Any existing files are overwritten without confirmation
 	#>
 
