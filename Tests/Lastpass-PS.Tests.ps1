@@ -1813,7 +1813,7 @@ Describe Confirm-Password {
 			Confirm-Password
 		}
 
-		Assert-MockCalled Read-Host -Exactly -Times 0 -Scope It
+		Assert-MockCalled Read-Host -Exactly -Times 0 -Scope It -ModuleName Lastpass-PS
 
 		InModuleScope Lastpass-PS { $Script:PasswordPrompt } | Should -Be $ExpectedPasswordPrompt
 	}
