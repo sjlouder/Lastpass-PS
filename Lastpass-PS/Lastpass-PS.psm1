@@ -669,7 +669,7 @@ Function Sync-Lastpass {
 								[Byte[]] [Char[]] $Account.AttachmentKey
 							)
 						}
-						$Blob.SecureNotes.Add($Account)
+						$Null = $Blob.SecureNotes.Add($Account)
 					}
 					'http://group' {
 						$PSCmdlet.WriteDebug('Item is folder')
@@ -677,10 +677,10 @@ Function Sync-Lastpass {
 						$Account.Keys.Where({$_ -notin $Schema.Folder.Fields}) |
 							ForEach { $Account.Remove($_) }
 						$Account.PSTypeName = 'Lastpass.Folder'
-						$Blob.Folders.Add($Account)
+						$Null = $Blob.Folders.Add($Account)
 					}
 					Default {
-						$Blob.Accounts.Add($Account)
+						$Null = $Blob.Accounts.Add($Account)
 					}
 				}
 
@@ -719,7 +719,7 @@ Function Sync-Lastpass {
 					Default { $FormField.Value = [Char[]] $FormField.Value -join '' }
 				}
 
-				$Blob.Accounts[-1].FormFields.Add($FormField)
+				$Null = $Blob.Accounts[-1].FormFields.Add($FormField)
 				$PSCmdlet.WriteDebug('END FORMFIELD DECODE')
 			}
 			ATTA {
@@ -754,7 +754,7 @@ Function Sync-Lastpass {
 					) | Write-Warning
 				}
 				If(!$SecureNote.Attachments){ $SecureNote.Attachments = [Collections.ArrayList]::New() } #@() }
-				$SecureNote.Attachments.Add($Attachment)
+				$Null = $SecureNote.Attachments.Add($Attachment)
 
 				$PSCmdlet.WriteDebug('END ATTACHMENT DECODE')
 
@@ -801,7 +801,7 @@ Function Sync-Lastpass {
 				}
 				$Folder.Name = $Folder.Name | ConvertFrom-LPEncryptedData -Base64 -Key $Folder.Key
 
-				$Blob.SharedFolders.Add(([PSCustomObject] $Folder))
+				$Null = $Blob.SharedFolders.Add(([PSCustomObject] $Folder))
 				$PSCmdlet.WriteDebug("END SHARE DECODE")
 			}
 
